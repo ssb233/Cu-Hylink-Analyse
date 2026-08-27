@@ -1,0 +1,77 @@
+# Build directories and generated build-system files
+build/
+
+# Build trees generated inside vendored third-party sources
+third_party/**/build/
+
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+.ninja_deps
+.ninja_log
+*.ninja
+
+# C/C++/CUDA compiler and linker artifacts
+*.o
+*.obj
+*.lo
+*.a
+*.la
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.ptx
+*.cubin
+*.fatbin
+
+# Python caches, test output, and package metadata
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+pip-wheel-metadata/
+
+# Local Python environments
+/.venv/
+/venv/
+/env/
+/ENV/
+
+# IDE and editor settings
+.idea/
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and local runtime files
+*.log
+*.pid
+*.seed
+*.tmp
+*.cache
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example

@@ -1,0 +1,11 @@
+scope,size,bytes,repeat1GBps,repeat2GBps,repeat3GBps,meanGBps,reference_or_note
+all-gpu,4K,4096,1.933,1.837,1.888,1.886,14.4% of all-gpu 1M mean
+all-gpu,16K,16384,6.227,6.056,6.377,6.220,47.3% of all-gpu 1M mean
+all-gpu,64K,65536,10.820,11.644,11.678,11.381,86.7% of all-gpu 1M mean
+all-gpu,256K,262144,13.079,13.079,13.074,13.077,99.6% of all-gpu 1M mean
+all-gpu,1M,1048576,13.128,13.131,13.130,13.130,reference
+gpu0,4K,4096,0.490,0.480,NA,0.485,per-GPU control
+gpu0,16K,16384,1.803,1.790,NA,1.797,per-GPU control
+gpu0,64K,65536,4.861,5.032,NA,4.947,per-GPU control
+gpu0,256K,262144,9.384,9.449,NA,9.417,per-GPU control
+gpu0,1M,1048576,11.884,11.897,NA,11.891,per-GPU control

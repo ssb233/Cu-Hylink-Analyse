@@ -1,0 +1,2 @@
+streamMode=per-edge streamDependency=source-chain edgeOrder=source-major repeats=20 repetition=2 scenario=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0\,1\,2\,3 --edgeOrder=source-major --streamMode=per-edge --streamDependency=source-chain --size=255M --repeats=20 --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/queue-phase-diagnostic/q1-source-chain/20260826T102517Z-219542/stream-per-edge/dependency-source-chain/repeats-20/repetition-2/none/d2d.json 

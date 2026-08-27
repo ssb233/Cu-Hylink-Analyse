@@ -1,0 +1,9 @@
+# Nsight Systems 2024.7.1 commands for the phase-lock diagnostic traces.
+# All commands use 4 GPUs, allpairs, 255M, warmup=10 (fixed), repeats=300,
+# one run, and all-GPU D2H background traffic.
+
+nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none --cuda-memory-usage=false --force-overwrite=true --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/phase-lock-diagnostic/source-major-per-source-d2h bash scripts/run_phase_lock_diagnostic.sh --deviceList=0,1,2,3 --edgeOrders=source-major --streamModes=per-source --repeatsList=300 --scenarios=d2h-all --runs=1 --size=255M --outputRoot=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/phase-lock-diagnostic/traces/20260826T094945Z/source-major-per-source-d2h
+
+nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none --cuda-memory-usage=false --force-overwrite=true --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/phase-lock-diagnostic/destination-major-per-source-d2h bash scripts/run_phase_lock_diagnostic.sh --deviceList=0,1,2,3 --edgeOrders=destination-major --streamModes=per-source --repeatsList=300 --scenarios=d2h-all --runs=1 --size=255M --outputRoot=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/phase-lock-diagnostic/traces/20260826T094945Z/destination-major-per-source-d2h
+
+nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none --cuda-memory-usage=false --force-overwrite=true --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/phase-lock-diagnostic/source-major-per-edge-d2h bash scripts/run_phase_lock_diagnostic.sh --deviceList=0,1,2,3 --edgeOrders=source-major --streamModes=per-edge --repeatsList=300 --scenarios=d2h-all --runs=1 --size=255M --outputRoot=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/phase-lock-diagnostic/traces/20260826T094945Z/source-major-per-edge-d2h

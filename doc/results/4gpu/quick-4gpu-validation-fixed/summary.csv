@@ -1,0 +1,7 @@
+pattern,direction,size,repeats,d2dAggregateGBps,backgroundAggregateGBps,status,d2dLog,backgroundLog
+ring,none,1M,1,110.703,NA,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/ring_none/d2d.log,NA
+ring,d2h,1M,1,70.242,13.374,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/ring_d2h/d2d.log,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/ring_d2h/background.log
+ring,h2d,1M,1,60.513,12.383,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/ring_h2d/d2d.log,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/ring_h2d/background.log
+allpairs,none,1M,1,100.285,NA,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/allpairs_none/d2d.log,NA
+allpairs,d2h,1M,1,33.614,14.860,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/allpairs_d2h/d2d.log,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/allpairs_d2h/background.log
+allpairs,h2d,1M,1,69.485,13.231,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/allpairs_h2d/d2d.log,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/4gpu/quick-4gpu-validation-fixed/allpairs_h2d/background.log

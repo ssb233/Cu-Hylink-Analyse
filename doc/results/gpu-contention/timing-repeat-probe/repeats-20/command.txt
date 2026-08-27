@@ -1,0 +1,3 @@
+nvidia-smi --query-gpu=index,pstate,clocks.current.sm,clocks.current.memory,temperature.gpu,power.draw,utilization.gpu,utilization.memory --format=csv,noheader,nounits
+nvidia-smi dmon -i 0,1,2,3 -d 1 -c 12 -s pucmt --format=csv
+build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0,1,2,3 --size=255M --repeats=20 --output=doc/results/gpu-contention/timing-repeat-probe/repeats-20/d2d.json

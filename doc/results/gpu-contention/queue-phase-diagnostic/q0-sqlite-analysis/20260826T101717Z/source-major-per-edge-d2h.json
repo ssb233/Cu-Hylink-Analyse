@@ -1,0 +1,279 @@
+{
+  "input": "/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/phase-lock-diagnostic/source-major-per-edge-d2h.sqlite",
+  "p2pCopyKind": 10,
+  "slowThresholdMs": 8.0,
+  "warmupIterations": 10,
+  "p2pCount": 3720,
+  "streamCount": 12,
+  "measuredP2pCount": 3600,
+  "slowCount": 0,
+  "slowCountScope": "allP2PRowsIncludingWarmup",
+  "measuredSlowCount": 0,
+  "durationMs": {
+    "p50": 5.585873,
+    "p90": 5.602601,
+    "p99": 5.60324,
+    "max": 5.605073
+  },
+  "slowByQueuePosition": [
+    {
+      "position": 0,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "position": 1,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "position": 2,
+      "count": 0,
+      "fraction": 0.0
+    }
+  ],
+  "slowByEdge": [
+    {
+      "source": 0,
+      "destination": 1,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 0,
+      "destination": 2,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 0,
+      "destination": 3,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 1,
+      "destination": 0,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 1,
+      "destination": 2,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 1,
+      "destination": 3,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 2,
+      "destination": 0,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 2,
+      "destination": 1,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 2,
+      "destination": 3,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 3,
+      "destination": 0,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 3,
+      "destination": 1,
+      "count": 0,
+      "fraction": 0.0
+    },
+    {
+      "source": 3,
+      "destination": 2,
+      "count": 0,
+      "fraction": 0.0
+    }
+  ],
+  "streams": [
+    {
+      "streamId": 46,
+      "source": 0,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 0,
+          "destination": 1,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 47,
+      "source": 0,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 0,
+          "destination": 2,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 48,
+      "source": 0,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 0,
+          "destination": 3,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 49,
+      "source": 1,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 1,
+          "destination": 0,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 50,
+      "source": 1,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 1,
+          "destination": 2,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 51,
+      "source": 1,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 1,
+          "destination": 3,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 52,
+      "source": 2,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 2,
+          "destination": 0,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 53,
+      "source": 2,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 2,
+          "destination": 1,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 54,
+      "source": 2,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 2,
+          "destination": 3,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 55,
+      "source": 3,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 3,
+          "destination": 0,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 56,
+      "source": 3,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 3,
+          "destination": 1,
+          "queuePosition": 0
+        }
+      ]
+    },
+    {
+      "streamId": 57,
+      "source": 3,
+      "rows": 310,
+      "edgeCount": 1,
+      "warmupRows": 10,
+      "edges": [
+        {
+          "source": 3,
+          "destination": 2,
+          "queuePosition": 0
+        }
+      ]
+    }
+  ]
+}

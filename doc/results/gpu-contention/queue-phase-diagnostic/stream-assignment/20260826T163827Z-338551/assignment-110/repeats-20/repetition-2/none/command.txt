@@ -1,0 +1,2 @@
+streamAssignment=1,1,0 assignmentId=110 repeats=20 repetition=2 scenario=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0\,1\,2\,3 --edgeOrder=source-major --streamMode=per-source --streamsPerSource=2 --streamDependency=none --streamAssignment=1\,1\,0 --size=255M --repeats=20 --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/queue-phase-diagnostic/stream-assignment/20260826T163827Z-338551/assignment-110/repeats-20/repetition-2/none/d2d.json 

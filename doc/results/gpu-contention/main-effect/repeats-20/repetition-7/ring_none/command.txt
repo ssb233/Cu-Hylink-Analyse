@@ -1,0 +1,2 @@
+pattern=ring direction=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=ring --deviceList=0\,1\,2\,3 --size=255M --repeats=20 --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/main-effect/repeats-20/repetition-7/ring_none/d2d.json 

@@ -1,0 +1,2 @@
+offsetId=offset-2 offsetsUs=0,500,1000,1500 repeats=300 repetition=1 scenario=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0\,1\,2\,3 --edgeOrder=source-major --streamMode=per-source --streamsPerSource=1 --streamDependency=none --sourceOffsetsUs=0\,500\,1000\,1500 --size=255M --repeats=300 --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/queue-phase-diagnostic/q4-source-offset/20260826T113225Z-267432/offset-2/repeats-300/repetition-1/none/d2d.json 

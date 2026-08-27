@@ -1,0 +1,1 @@
+nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none --cuda-memory-usage=false --force-overwrite=true --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/p2-allpairs-d2h-gpu0-correct bash -c '<controlled GPU0-only background wrapper>'

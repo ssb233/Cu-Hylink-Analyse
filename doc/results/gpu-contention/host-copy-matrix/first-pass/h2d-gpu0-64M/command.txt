@@ -1,0 +1,2 @@
+background_command=build/cuda_copy/host_copy_background --devList=0 --direction=h2d --size=64M --readyFile=doc/results/gpu-contention/host-copy-matrix/first-pass/h2d-gpu0-64M/ready --stopFile=doc/results/gpu-contention/host-copy-matrix/first-pass/h2d-gpu0-64M/stop --reportSec=1 --output=doc/results/gpu-contention/host-copy-matrix/first-pass/h2d-gpu0-64M/background.json
+duration_after_ready_sec=3

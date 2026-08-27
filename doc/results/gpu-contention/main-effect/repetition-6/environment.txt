@@ -1,0 +1,104 @@
+timestamp_utc=2026-08-26T06:27:50Z
+repo_root=/home/songxb26/HyLink/Cu-Hylink-Analyse
+git_revision=f67c24bfe82675a111bb1044ed15cc529f13a8d2
+cuda_visible_devices=unset
+NCCL_HOME=/home/songxb26/HyLink/nccl/build
+
+### command_line ###
+scripts/run_4gpu_copy_matrix.sh --deviceList=0\,1\,2\,3 --patterns=ring\,allpairs --directions=none\,d2h\,h2d --size=255M --repeats=500 --outputRoot=doc/results/gpu-contention/main-effect/repetition-6 
+
+### nvidia-smi ###
+Wed Aug 26 06:27:50 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.178.04             Driver Version: 580.178.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla V100-SXM2-32GB           On  |   00000000:1A:00.0 Off |                    0 |
+| N/A   45C    P0             75W /  300W |       0MiB /  32768MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  Tesla V100-SXM2-32GB           On  |   00000000:1C:00.0 Off |                    0 |
+| N/A   40C    P0             71W /  300W |       0MiB /  32768MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   2  Tesla V100-SXM2-32GB           On  |   00000000:1D:00.0 Off |                    0 |
+| N/A   39C    P0             72W /  300W |       0MiB /  32768MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   3  Tesla V100-SXM2-32GB           On  |   00000000:1E:00.0 Off |                    0 |
+| N/A   44C    P0             76W /  300W |       0MiB /  32768MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
+### nvidia-smi topo -m ###
+	[4mGPU0	GPU1	GPU2	GPU3	NIC0	NIC1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	NV2	NV2	NV2	NODE	NODE	0,2,4,6,8,10	0		N/A
+GPU1	NV2	 X 	NV2	NV2	NODE	NODE	0,2,4,6,8,10	0		N/A
+GPU2	NV2	NV2	 X 	NV2	NODE	NODE	0,2,4,6,8,10	0		N/A
+GPU3	NV2	NV2	NV2	 X 	NODE	NODE	0,2,4,6,8,10	0		N/A
+NIC0	NODE	NODE	NODE	NODE	 X 	PIX				
+NIC1	NODE	NODE	NODE	NODE	PIX	 X 				
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+
+NIC Legend:
+
+  NIC0: mlx5_0
+  NIC1: mlx5_1
+
+
+### nvidia-smi nvlink -s ###
+GPU 0: Tesla V100-SXM2-32GB (UUID: GPU-f93ae228-8777-8b11-9cb7-7b8a8c110705)
+	 Link 0: 25.781 GB/s
+	 Link 1: 25.781 GB/s
+	 Link 2: 25.781 GB/s
+	 Link 3: 25.781 GB/s
+	 Link 4: 25.781 GB/s
+	 Link 5: 25.781 GB/s
+GPU 1: Tesla V100-SXM2-32GB (UUID: GPU-3f6ce75a-08d0-9e13-e0cb-ee62c12d428a)
+	 Link 0: 25.781 GB/s
+	 Link 1: 25.781 GB/s
+	 Link 2: 25.781 GB/s
+	 Link 3: 25.781 GB/s
+	 Link 4: 25.781 GB/s
+	 Link 5: 25.781 GB/s
+GPU 2: Tesla V100-SXM2-32GB (UUID: GPU-fcfdb5e9-c370-6ad9-5619-d68d52ed28f9)
+	 Link 0: 25.781 GB/s
+	 Link 1: 25.781 GB/s
+	 Link 2: 25.781 GB/s
+	 Link 3: 25.781 GB/s
+	 Link 4: 25.781 GB/s
+	 Link 5: 25.781 GB/s
+GPU 3: Tesla V100-SXM2-32GB (UUID: GPU-87c1c17c-1d77-e83a-978e-74e85779b167)
+	 Link 0: 25.781 GB/s
+	 Link 1: 25.781 GB/s
+	 Link 2: 25.781 GB/s
+	 Link 3: 25.781 GB/s
+	 Link 4: 25.781 GB/s
+	 Link 5: 25.781 GB/s
+
+### nvcc --version ###
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2024 NVIDIA Corporation
+Built on Tue_Oct_29_23:50:19_PDT_2024
+Cuda compilation tools, release 12.6, V12.6.85
+Build cuda_12.6.r12.6/compiler.35059454_0

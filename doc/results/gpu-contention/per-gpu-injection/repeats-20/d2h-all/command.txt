@@ -1,0 +1,2 @@
+background_command=build/cuda_copy/host_copy_background --devList=0,1,2,3 --direction=d2h --size=255M --readyFile=doc/results/gpu-contention/per-gpu-injection/repeats-20/d2h-all/ready --stopFile=doc/results/gpu-contention/per-gpu-injection/repeats-20/d2h-all/stop --reportSec=2 --output=doc/results/gpu-contention/per-gpu-injection/repeats-20/d2h-all/background.json
+d2d_command=build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0,1,2,3 --size=255M --repeats=20 --output=doc/results/gpu-contention/per-gpu-injection/repeats-20/d2h-all/d2d.json

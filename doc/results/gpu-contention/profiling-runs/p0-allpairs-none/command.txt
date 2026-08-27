@@ -1,0 +1,1 @@
+nsys profile --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none --cuda-memory-usage=false --force-overwrite=true --output=doc/traces/gpu-contention/p0-allpairs-none bash scripts/run_4gpu_copy_matrix.sh --deviceList=0,1,2,3 --patterns=allpairs --directions=none --size=255M --repeats=300 --outputRoot=doc/results/gpu-contention/profiling-runs/p0-allpairs-none

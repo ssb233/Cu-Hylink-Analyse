@@ -1,0 +1,2 @@
+d2d_exit=0
+background_exit=0

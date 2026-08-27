@@ -1,0 +1,32 @@
+Generating SQLite file doc/traces/gpu-contention/p2-allpairs-d2h-gpu0.sqlite from doc/traces/gpu-contention/p2-allpairs-d2h-gpu0.nsys-rep
+Processing [doc/traces/gpu-contention/p2-allpairs-d2h-gpu0.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_api_sum.py]... 
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+81.3,34911977069,455,76729619.9,82238103.0,8120,111013767,24700301.6,cudaStreamSynchronize
+12.8,5512625915,4,1378156478.8,2915247.0,29913,5506765508,2752407363.0,cudaEventSynchronize
+3.7,1570374265,4,392593566.3,426624693.5,213773517,503351361,135060156.7,cudaMallocHost
+1.0,435900060,20,21795003.0,1274767.0,295354,201407910,61237346.3,cudaMalloc
+0.9,400424912,4,100106228.0,93392199.5,52800678,160839835,48729884.1,cudaFreeHost
+0.1,39631867,20,1981593.4,1076739.0,719969,20561574,4378409.1,cudaFree
+0.1,28960509,3720,7785.1,7581.0,6967,48823,1297.6,cudaMemcpyPeerAsync
+0.0,15069657,8,1883707.1,65987.5,43107,13251146,4610035.2,cudaStreamDestroy
+0.0,5007438,411,12183.5,10303.0,5330,96686,8611.3,cudaMemcpyAsync
+0.0,1373095,8,171636.9,162090.5,149477,239097,29846.0,cudaGetDeviceProperties_v2_v12000
+0.0,652248,20,32612.4,23839.0,19048,111078,22134.8,cudaMemset
+0.0,194218,8,24277.3,20871.5,9150,63319,17960.6,cudaStreamCreate
+0.0,42863,8,5357.9,3197.5,2960,17045,4906.4,cudaEventRecord
+0.0,25096,8,3137.0,1794.0,1165,12399,3811.5,cudaEventCreate
+0.0,24277,8,3034.6,2572.5,1075,6888,2240.2,cudaEventDestroy
+0.0,1894,2,947.0,947.0,847,1047,141.4,cuModuleGetLoadingMode
+
+Processing [doc/traces/gpu-contention/p2-allpairs-d2h-gpu0.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_gpu_mem_time_sum.py]... 
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+60.5,34626653316,411,84249764.8,82308918.0,45992710,109947913,7758020.2,[CUDA memcpy Device-to-Host]
+39.5,22619956965,3720,6080633.6,5532545.0,5512921,13506119,1991041.9,[CUDA memcpy Peer-to-Peer]
+0.0,6118529,20,305926.5,307006.5,300158,308927,2905.4,[CUDA memset]
+
+Processing [doc/traces/gpu-contention/p2-allpairs-d2h-gpu0.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_gpu_mem_size_sum.py]... 
+Total (MB),Count,Avg (MB),Med (MB),Min (MB),Max (MB),StdDev (MB),Operation
+994679.194,3720,267.387,267.387,267.387,267.387,0.000,[CUDA memcpy Peer-to-Peer]
+109896.008,411,267.387,267.387,267.387,267.387,0.000,[CUDA memcpy Device-to-Host]
+5347.738,20,267.387,267.387,267.387,267.387,0.000,[CUDA memset]
+

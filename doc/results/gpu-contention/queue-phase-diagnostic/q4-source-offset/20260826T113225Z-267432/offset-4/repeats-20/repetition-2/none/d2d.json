@@ -1,0 +1,29 @@
+{
+  "program": "d2d_multi_peer_bw",
+  "pattern": "allpairs",
+  "edgeOrder": "source-major",
+  "streamMode": "per-source",
+  "streamDependency": "none",
+  "streamsPerSource": 1,
+  "edgePermutation": [],
+  "devices": [0, 1, 2, 3],
+  "sourceEdgeOrder": [
+    {"source": 0, "destinations": [1, 2, 3]},
+    {"source": 1, "destinations": [0, 2, 3]},
+    {"source": 2, "destinations": [0, 1, 3]},
+    {"source": 3, "destinations": [0, 1, 2]}],
+  "sourceOffsetsUs": [0, 2000, 4000, 6000],
+  "repeats": 20,
+  "warmup": 10,
+  "bytesPerMemcpy": 267386880,
+  "totalBytes": 64172851200,
+  "directions": 12,
+  "aggregateGBps": 179.775925,
+  "deviceNames": ["Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB"],
+  "sourceResults": [
+    {"device": 0, "outgoing": 3, "elapsedMs": 356.652954, "GBps": 44.982700},
+    {"device": 1, "outgoing": 3, "elapsedMs": 356.757599, "GBps": 44.969505},
+    {"device": 2, "outgoing": 3, "elapsedMs": 356.960205, "GBps": 44.943981},
+    {"device": 3, "outgoing": 3, "elapsedMs": 356.434723, "GBps": 45.010241}
+  ]
+}

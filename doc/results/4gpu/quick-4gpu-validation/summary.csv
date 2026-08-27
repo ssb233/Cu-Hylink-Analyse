@@ -1,0 +1,7 @@
+pattern,direction,size,repeats,d2dAggregateGBps,backgroundAggregateGBps,status,d2dLog,backgroundLog
+ring,none,1M,1,110.237,NA,pass,doc/results/4gpu/quick-4gpu-validation/ring_none/d2d.log,NA
+ring,d2h,1M,1,64.157,13.556,pass,doc/results/4gpu/quick-4gpu-validation/ring_d2h/d2d.log,doc/results/4gpu/quick-4gpu-validation/ring_d2h/background.log
+ring,h2d,1M,1,59.932,13.463,pass,doc/results/4gpu/quick-4gpu-validation/ring_h2d/d2d.log,doc/results/4gpu/quick-4gpu-validation/ring_h2d/background.log
+allpairs,none,1M,1,100.106,NA,pass,doc/results/4gpu/quick-4gpu-validation/allpairs_none/d2d.log,NA
+allpairs,d2h,1M,1,33.640,13.119,pass,doc/results/4gpu/quick-4gpu-validation/allpairs_d2h/d2d.log,doc/results/4gpu/quick-4gpu-validation/allpairs_d2h/background.log
+allpairs,h2d,1M,1,70.180,12.539,pass,doc/results/4gpu/quick-4gpu-validation/allpairs_h2d/d2d.log,doc/results/4gpu/quick-4gpu-validation/allpairs_h2d/background.log

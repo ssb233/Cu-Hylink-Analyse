@@ -1,0 +1,2 @@
+pattern,direction,size,repeats,d2dAggregateGBps,backgroundAggregateGBps,status,d2dLog,backgroundLog
+allpairs,h2d,255M,300,186.904,11.600,pass,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/profiling-runs/p3-allpairs-h2d-all/allpairs_h2d/d2d.log,/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/profiling-runs/p3-allpairs-h2d-all/allpairs_h2d/background.log

@@ -1,0 +1,2 @@
+pattern=allpairs direction=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0\,1\,2\,3 --size=1M --repeats=1 --output=doc/results/4gpu/quick-4gpu-validation/allpairs_none/d2d.json 

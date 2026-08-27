@@ -1,0 +1,2 @@
+background_command=build/cuda_copy/host_copy_background --devList=0,1,2 --direction=d2h --size=512M --readyFile=doc/results/gpu-contention/host-copy-matrix/first-pass/d2h-gpu012-512M/ready --stopFile=doc/results/gpu-contention/host-copy-matrix/first-pass/d2h-gpu012-512M/stop --reportSec=1 --output=doc/results/gpu-contention/host-copy-matrix/first-pass/d2h-gpu012-512M/background.json
+duration_after_ready_sec=3

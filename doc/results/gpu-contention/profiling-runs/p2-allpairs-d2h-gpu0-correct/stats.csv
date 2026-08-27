@@ -1,0 +1,32 @@
+Generating SQLite file /home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/p2-allpairs-d2h-gpu0-correct.sqlite from /home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/p2-allpairs-d2h-gpu0-correct.nsys-rep
+Processing [/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/p2-allpairs-d2h-gpu0-correct.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_api_sum.py]... 
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+58.2,7766178194,377,20599942.2,21917654.0,2993,33623169,7221652.1,cudaStreamSynchronize
+40.1,5348534999,4,1337133749.8,14806.0,13472,5348491915,2674238776.8,cudaEventSynchronize
+1.0,132299081,1,132299081.0,132299081.0,132299081,132299081,0.0,cudaMallocHost
+0.3,42335008,1,42335008.0,42335008.0,42335008,42335008,0.0,cudaFreeHost
+0.2,30414626,3720,8176.0,7659.0,5436,599467,10036.6,cudaMemcpyPeerAsync
+0.1,10195596,17,599740.9,547571.0,479907,1067418,179625.3,cudaFree
+0.1,9141087,17,537711.0,601889.0,270581,635589,98515.8,cudaMalloc
+0.0,2671508,333,8022.5,6556.0,4972,124548,8939.6,cudaMemcpyAsync
+0.0,946663,5,189332.6,183579.0,173948,223292,19420.3,cudaGetDeviceProperties_v2_v12000
+0.0,335470,17,19733.5,14637.0,12575,68742,14668.2,cudaMemset
+0.0,289532,5,57906.4,21347.0,20020,182134,70280.4,cudaStreamDestroy
+0.0,75126,5,15025.2,9035.0,8094,29095,9255.4,cudaStreamCreate
+0.0,35978,8,4497.3,3228.0,2865,12195,3213.4,cudaEventRecord
+0.0,25417,8,3177.1,2003.0,1174,11485,3485.5,cudaEventCreate
+0.0,19703,8,2462.9,2177.5,1000,5221,1612.9,cudaEventDestroy
+0.0,1342,2,671.0,671.0,496,846,247.5,cuModuleGetLoadingMode
+
+Processing [/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/p2-allpairs-d2h-gpu0-correct.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_gpu_mem_time_sum.py]... 
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+73.8,21163161223,3720,5689021.8,5514141.5,5512559,13182758,966004.5,[CUDA memcpy Peer-to-Peer]
+26.2,7508246599,333,22547287.1,22058659.0,20353122,33609659,3215570.5,[CUDA memcpy Device-to-Host]
+0.0,5230851,17,307697.1,302655.0,301022,325309,9731.4,[CUDA memset]
+
+Processing [/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/traces/gpu-contention/p2-allpairs-d2h-gpu0-correct.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_gpu_mem_size_sum.py]... 
+Total (MB),Count,Avg (MB),Med (MB),Min (MB),Max (MB),StdDev (MB),Operation
+994679.194,3720,267.387,267.387,267.387,267.387,0.000,[CUDA memcpy Peer-to-Peer]
+89039.831,333,267.387,267.387,267.387,267.387,0.000,[CUDA memcpy Device-to-Host]
+4545.577,17,267.387,267.387,267.387,267.387,0.000,[CUDA memset]
+

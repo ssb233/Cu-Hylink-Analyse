@@ -1,0 +1,5 @@
+name=d2h-all
+direction=d2h
+devices=0,1,2,3
+command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw command=--pattern=allpairs command=--deviceList=0,1,2,3 command=--size=255M command=--repeats=500 command=--chunkRepeats=10 command=--output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/timing-repeat-diagnostic/high-res-telemetry/repeats-500/chunk-10/d2h-all/d2d.json 
+sampling_command=nvidia-smi sampling_command=--query-gpu=timestamp,index,pstate,clocks.current.graphics,clocks.current.memory,utilization.gpu,utilization.memory,power.draw sampling_command=--format=csv,noheader,nounits sampling_command=-lms sampling_command=100 

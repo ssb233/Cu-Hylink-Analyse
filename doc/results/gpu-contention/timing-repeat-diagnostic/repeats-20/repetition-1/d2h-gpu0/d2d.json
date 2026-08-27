@@ -1,0 +1,20 @@
+{
+  "program": "d2d_multi_peer_bw",
+  "pattern": "allpairs",
+  "devices": [0, 1, 2, 3],
+  "repeats": 20,
+  "warmup": 10,
+  "bytesPerMemcpy": 267386880,
+  "totalBytes": 64172851200,
+  "directions": 12,
+  "aggregateGBps": 130.004353,
+  "chunkRepeats": 10,
+  "chunkCount": 2,
+  "deviceNames": ["Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB"],
+  "sourceResults": [
+    {"device": 0, "outgoing": 3, "elapsedMs": 493.620789, "GBps": 32.501088, "chunks": [{"index": 0, "repeats": 10, "elapsedMs": 245.804291, "GBps": 32.634119}, {"index": 1, "repeats": 10, "elapsedMs": 247.786011, "GBps": 32.373121}]},
+    {"device": 1, "outgoing": 3, "elapsedMs": 356.632050, "GBps": 44.985337, "chunks": [{"index": 0, "repeats": 10, "elapsedMs": 178.336441, "GBps": 44.980187}, {"index": 1, "repeats": 10, "elapsedMs": 178.278015, "GBps": 44.994928}]},
+    {"device": 2, "outgoing": 3, "elapsedMs": 359.640717, "GBps": 44.609000, "chunks": [{"index": 0, "repeats": 10, "elapsedMs": 181.253860, "GBps": 44.256196}, {"index": 1, "repeats": 10, "elapsedMs": 178.369186, "GBps": 44.971929}]},
+    {"device": 3, "outgoing": 3, "elapsedMs": 359.909363, "GBps": 44.575703, "chunks": [{"index": 0, "repeats": 10, "elapsedMs": 181.427811, "GBps": 44.213764}, {"index": 1, "repeats": 10, "elapsedMs": 178.465057, "GBps": 44.947770}]}
+  ]
+}

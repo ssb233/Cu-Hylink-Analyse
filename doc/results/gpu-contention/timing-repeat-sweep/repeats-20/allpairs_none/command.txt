@@ -1,0 +1,2 @@
+pattern=allpairs direction=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0\,1\,2\,3 --size=255M --repeats=20 --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/timing-repeat-sweep/repeats-20/allpairs_none/d2d.json 

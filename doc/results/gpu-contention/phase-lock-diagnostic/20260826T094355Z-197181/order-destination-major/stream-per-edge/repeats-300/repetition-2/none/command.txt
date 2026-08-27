@@ -1,0 +1,2 @@
+edgeOrder=destination-major streamMode=per-edge repeats=300 repetition=2 scenario=none
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0\,1\,2\,3 --edgeOrder=destination-major --streamMode=per-edge --size=255M --repeats=300 --output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/phase-lock-diagnostic/20260826T094355Z-197181/order-destination-major/stream-per-edge/repeats-300/repetition-2/none/d2d.json 

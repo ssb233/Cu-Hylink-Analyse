@@ -1,0 +1,7 @@
+mode=async
+repeats=20
+repetition=3
+scenario=none
+direction=none
+devices=
+d2d_command=/home/songxb26/HyLink/Cu-Hylink-Analyse/build/cuda_copy/d2d_multi_peer_bw d2d_command=--pattern=allpairs d2d_command=--deviceList=0\,1\,2\,3 d2d_command=--size=255M d2d_command=--repeats=20 d2d_command=--syncEachIteration=0 d2d_command=--output=/home/songxb26/HyLink/Cu-Hylink-Analyse/doc/results/gpu-contention/timing-repeat-diagnostic/sync-each-iteration/repeats-20/repetition-3/none/async/d2d.json 

@@ -1,0 +1,35 @@
+{
+  "program": "d2d_multi_peer_bw",
+  "pattern": "allpairs",
+  "edgeOrder": "source-major",
+  "streamMode": "per-edge",
+  "streamDependency": "source-chain",
+  "devices": [0, 1, 2, 3],
+  "repeats": 300,
+  "warmup": 10,
+  "bytesPerMemcpy": 267386880,
+  "totalBytes": 962592768000,
+  "directions": 12,
+  "aggregateGBps": 192.887375,
+  "deviceNames": ["Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB"],
+  "sourceResults": [
+    {"device": 0, "outgoing": 3, "elapsedMs": 4988.941895, "GBps": 48.236319},
+    {"device": 1, "outgoing": 3, "elapsedMs": 4990.439453, "GBps": 48.221844},
+    {"device": 2, "outgoing": 3, "elapsedMs": 4990.253418, "GBps": 48.223642},
+    {"device": 3, "outgoing": 3, "elapsedMs": 4990.029297, "GBps": 48.225807}
+  ],
+  "edgeResults": [
+    {"source": 0, "destination": 1, "order": 0, "stream": 0, "elapsedMs": 4977.836914, "GBps": 16.114643},
+    {"source": 0, "destination": 2, "order": 1, "stream": 1, "elapsedMs": 4983.392578, "GBps": 16.096678},
+    {"source": 0, "destination": 3, "order": 2, "stream": 2, "elapsedMs": 4988.941895, "GBps": 16.078773},
+    {"source": 1, "destination": 0, "order": 3, "stream": 3, "elapsedMs": 4979.313965, "GBps": 16.109863},
+    {"source": 1, "destination": 2, "order": 4, "stream": 4, "elapsedMs": 4984.879395, "GBps": 16.091877},
+    {"source": 1, "destination": 3, "order": 5, "stream": 5, "elapsedMs": 4990.439453, "GBps": 16.073948},
+    {"source": 2, "destination": 0, "order": 6, "stream": 6, "elapsedMs": 4979.140137, "GBps": 16.110425},
+    {"source": 2, "destination": 1, "order": 7, "stream": 7, "elapsedMs": 4984.691895, "GBps": 16.092482},
+    {"source": 2, "destination": 3, "order": 8, "stream": 8, "elapsedMs": 4990.253418, "GBps": 16.074547},
+    {"source": 3, "destination": 0, "order": 9, "stream": 9, "elapsedMs": 4978.916992, "GBps": 16.111147},
+    {"source": 3, "destination": 1, "order": 10, "stream": 10, "elapsedMs": 4984.477051, "GBps": 16.093176},
+    {"source": 3, "destination": 2, "order": 11, "stream": 11, "elapsedMs": 4990.029297, "GBps": 16.075269}
+  ]
+}

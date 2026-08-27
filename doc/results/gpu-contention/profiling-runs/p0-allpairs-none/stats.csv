@@ -1,0 +1,27 @@
+Generating SQLite file doc/traces/gpu-contention/p0-allpairs-none.sqlite from doc/traces/gpu-contention/p0-allpairs-none.nsys-rep
+Processing [doc/traces/gpu-contention/p0-allpairs-none.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_api_sum.py]... 
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+95.5,5009687108,4,1252421777.0,1556769.0,13579,5006559991,2502759232.0,cudaEventSynchronize
+3.6,187993769,44,4272585.7,7362.0,2617,19041899,7875265.3,cudaStreamSynchronize
+0.5,28186108,3720,7576.9,7472.0,6817,24724,586.0,cudaMemcpyPeerAsync
+0.2,8242171,16,515135.7,519057.5,406342,679912,86793.1,cudaMalloc
+0.1,7849837,16,490614.8,464379.0,418982,946645,125975.3,cudaFree
+0.0,676739,4,169184.8,161150.0,158753,195686,17704.6,cudaGetDeviceProperties_v2_v12000
+0.0,300887,16,18805.4,16920.5,13412,47820,8165.3,cudaMemset
+0.0,96421,4,24105.3,20224.0,19177,36796,8491.4,cudaStreamDestroy
+0.0,48851,4,12212.8,9064.0,8142,22581,6933.1,cudaStreamCreate
+0.0,37961,8,4745.1,3232.5,2875,14272,3891.7,cudaEventRecord
+0.0,26701,8,3337.6,2054.0,1178,9835,2976.4,cudaEventCreate
+0.0,20210,8,2526.3,2238.0,985,4943,1625.5,cudaEventDestroy
+0.0,822,1,822.0,822.0,822,822,0.0,cuModuleGetLoadingMode
+
+Processing [doc/traces/gpu-contention/p0-allpairs-none.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_gpu_mem_time_sum.py]... 
+Time (%),Total Time (ns),Count,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Operation
+100.0,20862913440,3720,5608310.1,5513616.0,5512058,8099081,377800.4,[CUDA memcpy Peer-to-Peer]
+0.0,4841702,16,302606.4,302318.0,300927,306239,1536.4,[CUDA memset]
+
+Processing [doc/traces/gpu-contention/p0-allpairs-none.sqlite] with [/usr/local/cuda-12.6/NsightSystems-cli-2024.7.1/target-linux-x64/reports/cuda_gpu_mem_size_sum.py]... 
+Total (MB),Count,Avg (MB),Med (MB),Min (MB),Max (MB),StdDev (MB),Operation
+994679.194,3720,267.387,267.387,267.387,267.387,0.000,[CUDA memcpy Peer-to-Peer]
+4278.190,16,267.387,267.387,267.387,267.387,0.000,[CUDA memset]
+

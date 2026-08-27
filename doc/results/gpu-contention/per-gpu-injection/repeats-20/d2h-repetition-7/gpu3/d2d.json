@@ -1,0 +1,18 @@
+{
+  "program": "d2d_multi_peer_bw",
+  "pattern": "allpairs",
+  "devices": [0, 1, 2, 3],
+  "repeats": 20,
+  "warmup": 10,
+  "bytesPerMemcpy": 267386880,
+  "totalBytes": 64172851200,
+  "directions": 12,
+  "aggregateGBps": 129.680532,
+  "deviceNames": ["Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB"],
+  "sourceResults": [
+    {"device": 0, "outgoing": 3, "elapsedMs": 356.826263, "GBps": 44.960852},
+    {"device": 1, "outgoing": 3, "elapsedMs": 356.765778, "GBps": 44.968475},
+    {"device": 2, "outgoing": 3, "elapsedMs": 356.859436, "GBps": 44.956673},
+    {"device": 3, "outgoing": 3, "elapsedMs": 494.853394, "GBps": 32.420133}
+  ]
+}

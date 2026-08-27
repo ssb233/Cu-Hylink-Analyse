@@ -1,0 +1,11 @@
+{
+  "program": "host_copy_background",
+  "direction": "d2h",
+  "devices": [0, 1, 2],
+  "deviceNames": ["Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB", "Tesla V100-SXM2-32GB"],
+  "warmup": 10,
+  "bytesPerMemcpy": 67108864,
+  "totalBytes": 43083890688,
+  "elapsedSec": 3.148895,
+  "aggregateGBps": 13.682226
+}

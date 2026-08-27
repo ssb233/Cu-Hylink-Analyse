@@ -1,0 +1,5 @@
+repeats=500
+chunk_repeats=1
+scenario=d2h-gpu0
+d2d_command=build/cuda_copy/d2d_multi_peer_bw --pattern=allpairs --deviceList=0,1,2,3 --size=255M --repeats=500 --chunkRepeats=1 --output=doc/results/gpu-contention/timing-repeat-diagnostic/chunk-sweep/repeats-500/chunk-1/repetition-1/d2h-gpu0/d2d.json 
+background_command=build/cuda_copy/host_copy_background --devList=0 --direction=d2h --size=255M --readyFile=doc/results/gpu-contention/timing-repeat-diagnostic/chunk-sweep/repeats-500/chunk-1/repetition-1/d2h-gpu0/ready --stopFile=doc/results/gpu-contention/timing-repeat-diagnostic/chunk-sweep/repeats-500/chunk-1/repetition-1/d2h-gpu0/stop --reportSec=2 --output=doc/results/gpu-contention/timing-repeat-diagnostic/chunk-sweep/repeats-500/chunk-1/repetition-1/d2h-gpu0/background.json 
