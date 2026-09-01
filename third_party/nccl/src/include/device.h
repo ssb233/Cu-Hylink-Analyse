@@ -126,6 +126,56 @@ static_assert(NCCL_LL_CLEAN_MASK % NCCL_STEPS == 0, "Invalid NCCL_LL_CLEAN_MASK 
 // Number of named barriers supported by CUDA
 #define NCCL_MAX_GROUPS 16
 
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+#define NCCL_PRIMITIVE_TRACE_GROUPS 4
+#define NCCL_PRIMITIVE_TRACE_ROLES 4
+#define NCCL_PRIMITIVE_TRACE_EVENTS_PER_ROLE 32
+#define NCCL_PRIMITIVE_TRACE_MAX_SAMPLED_WORKS 128
+#define NCCL_PRIMITIVE_TRACE_SLOTS_PER_WORK \
+  (NCCL_PRIMITIVE_TRACE_GROUPS * NCCL_PRIMITIVE_TRACE_ROLES * NCCL_PRIMITIVE_TRACE_EVENTS_PER_ROLE)
+#define NCCL_PRIMITIVE_TRACE_EVENT_COUNTERS_PER_CHANNEL \
+  (NCCL_PRIMITIVE_TRACE_MAX_SAMPLED_WORKS * NCCL_PRIMITIVE_TRACE_GROUPS * NCCL_PRIMITIVE_TRACE_ROLES)
+#define NCCL_PRIMITIVE_TRACE_RECORDS_PER_CHANNEL \
+  (NCCL_PRIMITIVE_TRACE_MAX_SAMPLED_WORKS * NCCL_PRIMITIVE_TRACE_SLOTS_PER_WORK)
+
+struct ncclDevPrimitiveTraceRecord {
+  uint64_t sequence;
+  uint64_t step;
+  uint64_t startNs;
+  uint64_t durationNs;
+  uint64_t sliceBytes;
+  uint16_t rank;
+  uint16_t channel;
+  uint16_t group;
+  uint16_t role;
+  uint16_t primitive;
+  uint16_t phase;
+  uint16_t funcId;
+  uint16_t eventIndex;
+  uint32_t spinLoadCount;
+  uint32_t eventCount;
+  uint32_t valid;
+};
+static_assert(sizeof(struct ncclDevPrimitiveTraceRecord) == 72,
+              "Unexpected ncclDevPrimitiveTraceRecord layout");
+
+struct ncclDevPrimitiveTraceChannel {
+  uint32_t overflow;
+  uint32_t droppedRecords;
+  uint32_t reserved[2];
+  uint32_t eventCursors[NCCL_PRIMITIVE_TRACE_EVENT_COUNTERS_PER_CHANNEL];
+  struct ncclDevPrimitiveTraceRecord records[NCCL_PRIMITIVE_TRACE_RECORDS_PER_CHANNEL];
+};
+
+struct ncclDevPrimitiveTrace {
+  uint32_t magic;
+  uint32_t enabled;
+  uint32_t samplePeriod;
+  uint32_t maxSampledWorks;
+  struct ncclDevPrimitiveTraceChannel channels[MAXCHANNELS];
+};
+#endif
+
 #define NCCL_REGULAR_BUFFER 0x00
 #define NCCL_IPC_REG_BUFFER 0x01
 #define NCCL_NVLS_REG_BUFFER 0x02
@@ -478,6 +528,9 @@ struct ncclKernelComm {
   struct ncclDevProfiler* workStarted /*[MAXCHANNELS]*/;
   struct ncclDevProfiler* workCompleted /*[MAXCHANNELS]*/;
   struct ncclDevProfilerPhases* workPhases /*[MAXCHANNELS]*/;
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+  struct ncclDevPrimitiveTrace* primitiveTrace;
+#endif
 };
 
 struct alignas(16) ncclKernelCommAndChannels {

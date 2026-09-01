@@ -20,6 +20,9 @@ struct ncclComm;
 struct ncclProxyOp;
 struct ncclDevProfiler;
 struct ncclDevProfilerPhases;
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+struct ncclDevPrimitiveTrace;
+#endif
 
 struct ncclProfilerWorkOp {
   int channelId;
@@ -53,6 +56,9 @@ struct ncclProfilerCommState {
   struct ncclDevProfiler* symWorkCompleted /*[MAXCHANNELS]*/;
   struct ncclDevProfilerPhases* symWorkPhases /*[MAXCHANNELS]*/;
   uint64_t symWorkCounter[MAXCHANNELS];
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+  struct ncclDevPrimitiveTrace* primitiveTrace;
+#endif
   // Shared with comm-split children when shareResources is set.
   struct ncclProfilerThread* profilerThread;
 };
@@ -140,6 +146,9 @@ bool ncclProfilerPluginLoaded(void);
 // Dedicated profiler thread API
 ncclResult_t ncclProfilerThreadCreate(struct ncclComm* comm, struct ncclComm* parent);
 ncclResult_t ncclProfilerThreadDestroy(struct ncclComm* comm);
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+void ncclPrimitiveTraceDump(struct ncclComm* comm);
+#endif
 // Post KernelCh work per (task, channel) for every KernelCh-enabled task in
 // plan. Called from hostStreamPlanCallback so the host workCounter stays in
 // lock-step with the device on every (graph-captured) replay.

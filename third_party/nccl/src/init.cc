@@ -42,6 +42,7 @@
 #include "tuning.h"
 
 #include <cinttypes>
+#include <cstdlib>
 
 #define STR2(v) #v
 #define STR(v) STR2(v)
@@ -694,6 +695,38 @@ static ncclResult_t devCommSetup(ncclComm_t comm) {
   ncclCommPushCudaHostFree(comm, comm->profiler.symWorkStarted);
   ncclCommPushCudaHostFree(comm, comm->profiler.symWorkCompleted);
   ncclCommPushCudaHostFree(comm, comm->profiler.symWorkPhases);
+
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+  // Keep the disabled instrumented build on the null-pointer fast path.  The
+  // primitive trace hooks are compiled into the kernel, but allocating a
+  // trace object and publishing an ``enabled=0`` object would still make every
+  // sampled primitive load device trace state on the production path.
+  comm->profiler.primitiveTrace = nullptr;
+  {
+    const char* traceFile = getenv("NCCL_PRIMITIVE_TRACE_FILE");
+    const char* periodText = getenv("NCCL_PRIMITIVE_TRACE_SAMPLE_PERIOD");
+    char* end = nullptr;
+    unsigned long long period = periodText && *periodText ? strtoull(periodText, &end, 10) : 0;
+    if (periodText == nullptr || end == periodText || (end != nullptr && *end != '\0')) period = 0;
+    if (period > UINT32_MAX) period = UINT32_MAX;
+    const bool traceEnabled = traceFile != nullptr && *traceFile != '\0' && period != 0;
+    if (traceEnabled) {
+      NCCLCHECKGOTO(ncclCudaCallocAsync(&comm->profiler.primitiveTrace, 1, deviceStream, comm->memManager), ret, fail);
+      uint32_t traceConfig[4] = {
+        0x4e505452,
+        1u,
+        (uint32_t)period,
+        NCCL_PRIMITIVE_TRACE_MAX_SAMPLED_WORKS
+      };
+      NCCLCHECKGOTO(ncclCudaMemcpyAsync((uint32_t*)comm->profiler.primitiveTrace, traceConfig, 4, deviceStream), ret,
+                    fail);
+    }
+  }
+  tmpCommAndChans.comm.primitiveTrace = comm->profiler.primitiveTrace;
+  if (comm->profiler.primitiveTrace != nullptr) {
+    ncclCommPushCudaFree(comm, comm->profiler.primitiveTrace);
+  }
+#endif
 
   if (comm->denseToUserRank != nullptr) {
     NCCLCHECKGOTO(ncclCudaCallocAsync(&tmpCommAndChans.comm.denseToUserRank, nRanks, deviceStream, comm->memManager),
@@ -2949,6 +2982,9 @@ static ncclResult_t commDestroySync(struct ncclAsyncJob* job_) {
     if ((ret = ncclStrongStreamSynchronize(&comm->sharedRes->deviceStream)) != ncclSuccess) {
       INFO(NCCL_DESTROY, "commDestroySync: comm %p rank %d sync deviceStream error %d", comm, comm->rank, ret);
     }
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+    ncclPrimitiveTraceDump(comm);
+#endif
 
     NCCLCHECKGOTO(ncclCommPollEventCallbacks(comm, true), ret, fail);
     NCCLCHECKGOTO(ncclCommPollCallbacks(comm, false), ret, fail);

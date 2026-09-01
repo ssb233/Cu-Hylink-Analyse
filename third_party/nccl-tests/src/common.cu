@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <mutex>
 #include <condition_variable>
+#include <chrono>
 #include <thread>
 #include <vector>
 #include "cuda.h"
@@ -85,6 +86,54 @@ extern "C" char const* ncclGetLastError(ncclComm_t comm);
 int is_main_proc = 0;
 thread_local int is_main_thread = 0;
 static const char* programName = nullptr;
+
+static unsigned long long windowTimestampNs() {
+  return static_cast<unsigned long long>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+}
+
+static void writeWindowMarker(const struct threadArgs* args, const char* event) {
+  const char* path = getenv("NCCL_TESTS_WINDOW_FILE");
+  if (path == nullptr || path[0] == '\0' || args->proc != 0 ||
+      args->thread != 0) {
+    return;
+  }
+  FILE* marker = fopen(path, "a");
+  if (marker == nullptr) {
+    fprintf(stderr, "WARNING: failed to open NCCL_TESTS_WINDOW_FILE=%s\n", path);
+    return;
+  }
+  fprintf(marker, "{\"event\":\"%s\",\"timestampNs\":%llu,\"rank\":0}\n",
+          event, windowTimestampNs());
+  fflush(marker);
+  fclose(marker);
+}
+
+static void writeWindowReady(const struct threadArgs* args) {
+  if (args->proc != 0 || args->thread != 0) return;
+  writeWindowMarker(args, "ready");
+  const char* path = getenv("NCCL_TESTS_READY_FILE");
+  if (path == nullptr || path[0] == '\0') return;
+  FILE* ready = fopen(path, "w");
+  if (ready == nullptr) {
+    fprintf(stderr, "WARNING: failed to open NCCL_TESTS_READY_FILE=%s\n", path);
+    return;
+  }
+  fprintf(ready, "ready\n");
+  fflush(ready);
+  fclose(ready);
+}
+
+static bool windowStopRequested() {
+  const char* path = getenv("NCCL_TESTS_STOP_FILE");
+  if (path == nullptr || path[0] == '\0') return false;
+  FILE* stop = fopen(path, "r");
+  if (stop == nullptr) return false;
+  fclose(stop);
+  return true;
+}
 
 // Command line parameter defaults
 int nThreads = 1;
@@ -931,6 +980,7 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
   }
 
   // Benchmark
+  writeWindowMarker(args, "measured_begin");
   long repeat = run_cycles;
   do {
     for (size_t size = args->minbytes; size<=args->maxbytes; size = ((args->stepfactor > 1) ? size*args->stepfactor : size+args->stepbytes)) {
@@ -940,7 +990,8 @@ testResult_t TimeTest(struct threadArgs* args, ncclDataType_t type, const char* 
       TESTCHECK(BenchTime(args, type, op, root, 1));
       writeBenchmarkLineTerminator(iters, "");
     }
-  } while (--repeat);
+  } while (--repeat && !windowStopRequested());
+  writeWindowMarker(args, "measured_end");
 
   // Revert forced misalignment
   for (int i = 0; i < args->nGpus; i++) {
@@ -969,6 +1020,7 @@ testResult_t threadRunTests(struct threadArgs* args) {
   // will be done on the current GPU (by default : 0) and if the GPUs are in
   // exclusive mode those operations will fail.
   CUDACHECK(cudaSetDevice(args->gpus[0]));
+  writeWindowReady(args);
   TESTCHECK(ncclTestEngine.runTest(args, ncclroot, (ncclDataType_t)nccltype, test_typenames[nccltype], (ncclRedOp_t)ncclop, test_opnames[ncclop]));
 
   // Capture the memory used by the GPUs

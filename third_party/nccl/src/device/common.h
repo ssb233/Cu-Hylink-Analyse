@@ -14,6 +14,15 @@
 #include "reduce_kernel.h"
 #include "network/unpack/unpack_defs.h"
 
+#ifndef NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND
+#define NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND 0
+#endif
+#define NCCL_PRIMITIVE_TRACE_KIND_WAIT 1
+#define NCCL_PRIMITIVE_TRACE_KIND_FENCE 2
+#define NCCL_PRIMITIVE_TRACE_KIND_STORE 3
+#define NCCL_PRIMITIVE_TRACE_KIND_POST 4
+#define NCCL_PRIMITIVE_TRACE_KIND_COPY 5
+
 #define COLL_UNROLL (ncclCollUnroll())
 
 #if __CUDA_ARCH__ >= 700
@@ -337,6 +346,16 @@ struct RunWorkBatch {
       // Coverity reports a possible thread divergence due to not all threads participating in the collective.
       // However, the code ensures that the participation is on a per-warp basis.
       // coverity[device_thread_diverged:FALSE]
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+      // channel.workCounter names the batch, while a batch may contain multiple
+      // work items (for example nccl-tests' out-of-place/in-place pair).  Give
+      // the tracer the current per-work key without adding a synchronization to
+      // runtime-disabled instrumented launches.
+      if (ncclShmem.comm.primitiveTrace != nullptr && ncclShmem.comm.primitiveTrace->enabled != 0) {
+        if (tid == 0) ncclShmem.workCounter = ncclShmem.channel.workCounter + w;
+        __syncthreads();
+      }
+#endif
       if (tid < subtn) RunWorkColl<Fn, T, RedOp, Algo, Proto>().run(tid, subtn, work);
     }
     // End of compute. Sync so thread 0's stamp reflects the last worker finishing.

@@ -555,6 +555,37 @@ trace 对应的命令、JSON 和后台日志目录：[`phase-lock-diagnostic/tra
     12.79–12.95 GB/s。4M 相比 8M/16M 有小幅恢复，但仍明显低于 clean，说明当前
     明显竞争区间至少延伸到 4M；结合 64K 的近似无影响结果，离散实验只能将转折
     保持在 64K 与 4M 之间。本轮按要求未执行 1M，且没有采集 trace。
+22. Stage F 在三张 V100 上把受害拓扑缩减为每个 source 一个 stream 连续承载两次
+    P2P copy。该 `single-two-copy` 在所有
+    `CUDA_DEVICE_MAX_CONNECTIONS=unset,1,2,4,8,16,32` 下都从约 130 GB/s 降到
+    约 82 GB/s，降幅稳定在约 37%；`edge-independent` 和
+    `edge-source-chain` 的下降均小于 0.5%。因此逻辑串行本身不足以复现问题，当前
+    稳定判别条件是两条 P2P 是否共享同一个 source stream identity/提交序列；connection 数量
+    不是可见的触发阈值，也不是有效的规避旋钮。
+23. Stage F/F2 的三卡 CUPTI trace 中，每个 case 都完整记录 1860 条 P2P activity。
+    `single-two-copy + D2H` 有 926 条 `>8 ms`，数量几乎等于每轮三个 source 各自的
+    第二条 operation，即 `3 × (10 warmup + 300 measured) = 930`；两个独立
+    edge-stream topology 均为 0 条。慢样本又集中到每个 source context 的一个
+    scoped channel，因此长尾不是均匀随机的带宽抖动，而是与同一 stream successor
+    及其 activity-level HW channel/path 稳定关联。该计数接近但不等于逐 operation
+    correlation 证明，后续 trace 仍应显式输出 edge、queue position 和 correlation ID。
+24. Stage F/F3 中，同进程/同 primary context 会把 `single-two-copy + D2H` 进一步
+    降到约 25.22 GB/s，但代表性 trace 的 P2P activity 本身仍约 5.5--6.8 ms，主要
+    新增的是相邻 P2P activity 之间最高约 61 ms 的空档。这说明跨 context 不是现象的
+    必要条件，但 context boundary 会改变竞争严重程度；同时，部分等待发生在 CUPTI
+    memcpy activity 可见区间之外，不能只用 activity duration 解释 aggregate 下降。
+25. Stage G 的 victim replacement 提供了较强的负对照：保留同一 source-stream
+    successor 的 local D2D CE victim 只下降 1.14%，source 发起的 peer-write kernel
+    只下降 0.41%，而原始 `cudaMemcpyPeerAsync` P2P CE victim 下降 36.96%。因此
+    普通 CE copy、SM-driven peer memory/NVLink 访问、源 HBM read 或同 stream
+    successor 中的任何单一因素都不是充分条件；强效应目前只在原始 D2H 与原始 P2P
+    copy command/path 的组合中观察到。
+26. Stage G 的 background replacement 只匹配了约 4 GB/s/GPU 的时间平均字节率，
+    没有匹配原始 D2H 的持续占用。代表性 `single-two-copy` 运行中，local D2D CE、
+    streaming HBM read、HBM write 和 L2 candidate 的实测 active duty 分别仅约
+    1.1%、1.6%、0.7% 和 3.4%；原始 D2H 则是同步完成一次 255 MiB DMA 后立即重发，
+    没有人为 sleep。因此当前 G1 只能证明“相同平均 GB/s 的低占空比突发背景不复现”，
+    不能据此完全排除持续的 local CE、HBM/L2 或片上 fabric 竞争。
 
 ### 仍不能声称的判断
 
@@ -563,7 +594,14 @@ trace 对应的命令、JSON 和后台日志目录：[`phase-lock-diagnostic/tra
 - 不能把 `nvidia-smi dmon sm=100` 当作 SM occupancy；
 - 不能用当前 `N/A` 的 NVLink data counter 计算精确 NVLink utilization；
 - 不能把 20-repeat 的 -28.8% 外推为任意运行时长都会出现的固定下降比例；
-- 不能把 host-copy 第一批 aggregate 当作完整 PCIe/NUMA capacity characterization。
+- 不能把 host-copy 第一批 aggregate 当作完整 PCIe/NUMA capacity characterization；
+- 不能把三卡 `single-two-copy` 冒充四卡 `assignment=0,1,0` 的等价复现；三卡证明的
+  是最小的 source-local 两-copy 触发条件，不能外推四卡第三条 edge、destination
+  fan-in、全局波前或绝对下降幅度；
+- 不能把 Stage G 的低 active-duty background replacement 写成“持续 HBM/L2/local
+  CE 路径已排除”；
+- 不能把 CUPTI `channelID` 命名为物理 CE instance，或据此声称已经确定 descriptor
+  FIFO、credit refill、firmware time slice 或 NVLink scheduler。
 
 ## 8. 下一步执行顺序
 
@@ -1064,7 +1102,12 @@ L2/HBM 或 NVLink scheduler 已被定位。Q4 只改变 measured batch 的初始
 11. [已完成] 实现 Q4 source offset，完成 6 个 offset 向量的 3 次筛选和 6 份 trace，
    并用 delay kernel duration / 第一条 P2P start span 校验实际设备时间线；
 12. 仅在 Q1-Q4/Q2b-Q2g 留下数据复用歧义时执行 Q5；
-13. 根据决策表更新第 6.3、7、8 章，不提前写入 CE/NVLink 具体根因。
+13. 执行 8.8 的 Stage F，先确定 CUDA copy work queue / HW channel 层级；
+14. Stage F 完成判读或达到其观测停止条件后，才执行 8.9 的 Stage G，区分
+    CE/DMA、源端 HBM/L2/internal fabric 和 NVLink path；
+15. 根据 Stage F/G 决策表更新第 6.3、7、8 章；在证据不足时不得把 `channelID`
+    写成物理 CE 编号，也不得把固定约 7.8 ms 的额外时长直接命名为某种 credit
+    refill 或 firmware time slice。
 
 每个新增 CLI 参数都需要：
 
@@ -1075,24 +1118,800 @@ L2/HBM 或 NVLink scheduler 已被定位。Q4 只改变 measured batch 的初始
 - 2-repeat 四卡 smoke test；
 - 原默认参数回归测试。
 
-基于 Q1-Q4 及 Q2b-Q2f 当前证据，推荐结论限定为：
+基于 Q1-Q4 及 Q2b-Q2g 当前证据，推荐结论限定为：
 
-> D2H 与单 source 串行队列形成 queue-phase coupling；head-of-line blocking 和有限
-> eligible work 是当前长尾的重要条件。现有数据不要求各 GPU copy 完全对齐，也
-> 尚不能区分 FIFO 依赖、stream/engine mapping 和具体 NVLink path 调度的相对贡献。
+> D2H 与同一 source CUDA stream 内的大 P2P successor 形成 queue-phase coupling；
+> 共享 stream 的后继 operation 是当前长尾的稳定触发条件，但逻辑串行依赖或
+> head-of-line blocking 单独并不充分。现有数据不要求各 GPU copy 完全对齐，也尚
+> 不能区分 stream-to-work-queue mapping、CE 内部状态和具体 NVLink path 调度。
 
-### 8.8 其余既有后续工作
+### 8.8 Stage F：先确定 work queue / HW channel 层级
 
-完成 Q1-Q4、Q2b、Q2c、Q2d、Q2e、Q2f 和 Q2g 后再继续：
+#### 8.8.1 目标、边界和固定工作负载
 
-1. 让 background JSON 输出每个 GPU 的 bytes/GB/s；D1 的 D2D per-source 已经足够
-   显示局部性，但还需要精确的背景压力值；
+本阶段只回答以下问题，不提前进入 HBM/L2/NVLink 压力 kernel：
+
+1. 独立 CUDA stream 消除长尾，是否因为它们被映射到不同 copy-engine connection /
+   work queue；
+2. 快、慢 P2P 和 D2H 分别运行在哪些 CUPTI HW channel；
+3. 当前现象属于 stream 映射到相同 work queue 造成的 false dependency、特定 HW
+   channel 相关状态，还是同一 channel 内/其下游的持续 stall；
+4. 当前 D2H 与 D2D 位于两个进程、两个 CUDA context，这一边界是否是必要条件。
+
+主矩阵固定使用四卡 allpairs、D2D=255M、background D2H=255M、warmup=10、
+repeats=300。每个无 profiler case 执行 3 次；20-repeat 只作为短批次回归，不与
+300-repeat 混合求均值。至少保留以下四种 D2D stream topology：
+
+| 名称 | 配置 | 目的 |
+| --- | --- | --- |
+| `s1` | `streamsPerSource=1, dependency=none` | 已知有阶段性长尾的受害配置 |
+| `s2` | `streamsPerSource=2, assignment=0,1,0` | 每轮每 source 有一个稳定慢 successor |
+| `s3` | `streamsPerSource=3, dependency=none` | 已知无长尾的独立 stream 配置 |
+| `s3-chain` | `streamsPerSource=3, dependency=source-chain` | 严格串行但保持独立 stream identity |
+
+每个 case 必须同时保存 D2D aggregate/per-source GB/s、background aggregate/per-GPU
+GB/s、每条 P2P duration、`>8 ms` 数量、slow-by-source/edge/queue-position、stream 数、
+完整环境变量、命令、退出状态和原始日志。正式结果目录固定为：
+
+```text
+doc/results/gpu-contention/work-queue-channel/
+doc/traces/gpu-contention/work-queue-channel/
+```
+
+#### 8.8.2 F1：`CUDA_DEVICE_MAX_CONNECTIONS` work-queue 扫描
+
+NVIDIA 将 `CUDA_DEVICE_MAX_CONNECTIONS` 定义为每个 device/context 的并发 compute
+和 copy-engine connections（work queues）。V100 为 compute capability 7.0，本阶段
+只使用该变量；不要使用只对 compute capability 8.0+ 生效的
+`CUDA_DEVICE_MAX_COPY_CONNECTIONS`。
+
+第一轮对 D2D 与 background 两个进程在 CUDA context 初始化前设置相同值：
+
+```text
+unset,1,2,4,8,16,32
+```
+
+执行矩阵为：
+
+```text
+7 connection 配置 × 4 stream topology × 2 场景(clean/D2H) × 3 次
+```
+
+runner 建议新增独立进程环境参数，而不是在已有 CUDA 程序初始化后调用 `setenv`：
+
+```text
+--d2dMaxConnections=unset|1|2|4|8|16|32
+--backgroundMaxConnections=unset|1|2|4|8|16|32
+```
+
+主矩阵出现显著信号后，再只对 `1,2,8` 做两组非对称消融：
+
+```text
+D2D process 改变 MAX_CONNECTIONS，background 保持 unset
+background process 改变 MAX_CONNECTIONS，D2D 保持 unset
+```
+
+判读如下：
+
+- `s3`/`s3-chain` 在 connection=1 时重新出现约 13.4 ms 长尾，而较大 connection
+  恢复：强支持独立 stream 通过不同 connection/work queue 避免 false dependency；
+- 长尾消失存在与独立 P2P stream identity 数接近的 connection 阈值：支持
+  stream-to-work-queue 映射是主要变量；
+- 只有 D2D 进程的 connection 数改变结果：问题主要在 P2P stream 的本 context
+  work-queue mapping；
+- 只有 background 进程的 connection 数改变结果：D2H context 的 copy connection
+  占用或调度形态更重要；
+- 所有 connection 值结果一致：不能否定更下游的 CE/credit 竞争，但应减弱“多个
+  CUDA stream 因碰撞到同一 work queue 才变慢”的解释。
+
+禁止只比较 aggregate。尤其要检查 `s2` 是否仍满足 measured 慢样本数
+`4 × repeats`，以及慢点是否仍为共享 stream 的第二个 operation。
+
+#### 8.8.3 F2：用 CUPTI activity 记录 memcpy HW channel
+
+当前 Nsight Systems SQLite 的 `CUPTI_ACTIVITY_KIND_MEMCPY` 表没有导出 HW channel
+字段，但当前 CUDA 12.6 的 `CUpti_ActivityMemcpy5` 和
+`CUpti_ActivityMemcpyPtoP4` 均包含 `channelID`/`channelType`。实现一个只读 CUPTI
+activity tracer，至少启用 `CUPTI_ACTIVITY_KIND_MEMCPY` 和
+`CUPTI_ACTIVITY_KIND_MEMCPY2`，为每条记录输出：
+
+```text
+processId, deviceId, contextId, streamId,
+channelID, channelType, copyKind,
+srcDeviceId, dstDeviceId, bytes,
+startNs, endNs, durationMs, correlationId
+```
+
+建议文件边界：
+
+```text
+src/cuda_copy/cupti_memcpy_channel_trace.cpp   CUPTI buffer/callback 与 CSV 输出
+scripts/analyze_copy_channel_trace.py          channel/stream/duration 关联分析
+scripts/run_work_queue_channel_diagnostic.sh   F1/F2 runner
+tests/cuda_copy/test_copy_channel_analysis.sh  合成 CSV/JSON 的只读分析测试
+```
+
+如果采用注入库或分别链接两个 benchmark，D2D 和 background 必须输出到不同文件，
+文件名包含 PID。分析时把 `(PID, deviceId, contextId, channelType, channelID)` 作为
+默认 channel key；除非先验证跨进程 `channelID` 位于同一命名空间，否则不得仅凭
+相同数字声称两个 context 使用同一物理 channel。
+
+先用 2-repeat smoke test 验证：P2P/D2H copy kind 正确、P2P 数量正确、CSV 无丢行、
+`channelType` 合法。正式 CUPTI trace 不运行完整 F1 矩阵，只采集以下关键 case：
+
+```text
+MAX_CONNECTIONS=unset: s1, s2, s3, s3-chain × clean/D2H
+MAX_CONNECTIONS=1:     s2, s3, s3-chain × clean/D2H
+MAX_CONNECTIONS=8:     s2, s3, s3-chain × clean/D2H
+```
+
+每个 trace 生成以下统计：
+
+- 每个 CUDA stream 映射到多少个 HW channel；
+- 每个 HW channel 承载的 fast/slow P2P 和 D2H 数量；
+- `P(slow | channelID)` 与 `P(channelID | slow)`；
+- 拆为 3 stream 或改变 connection 数后，stream-to-channel 映射是否变化；
+- 慢 P2P 是否仍在 D2H operation 内部均匀出现，而不是只集中在 D2H 边界；
+- CUPTI 对 aggregate 和 duration 分布的扰动，要求与无 tracer case 对照报告。
+
+判读如下：
+
+- 慢 P2P 稳定集中到某个 channel，且 stream 拆分后避开该 channel：支持
+  stream/channel mapping；
+- 3-stream 使三个 edge 分散到不同 channel，并与长尾消失同时发生：直接支持
+  独立 HW work queue/channel 是免疫条件；
+- fast/slow P2P 的 channel 完全相同：问题更可能位于同一 channel 内部或其共享的
+  CE/source-side data path，不能继续用“慢点被映射到另一物理 CE”解释；
+- `channelID` 不稳定、不可获得或 profiler 扰动改变现象：记录该观测上限，不把
+  CUPTI 结果用于物理 CE 归因。
+
+`channelID` 是 HW channel 标识，不等于公开保证的物理 CE instance 编号，也不提供
+descriptor FIFO occupancy、credit 数量或 stall reason。
+
+#### 8.8.4 F3：context/connection-pool 边界对照
+
+当前 background 与 D2D 是两个进程。完成 F1/F2 后，使用同样的 D2H buffer、size、
+同步 cadence 和 ready/stop 协议，增加以下对照：
+
+1. 当前默认：两个进程、两个 context、无 MPS；
+2. 同一进程/同一 primary context：每张 GPU 的 D2H worker 和 P2P stream 位于同一
+   进程，仍使用独立 host thread 和独立 CUDA stream；
+3. 若机器允许且能完整记录启动/清理状态，再运行两个进程 + Volta MPS；MPS case
+   必须单独成批，结束后恢复原状态，不与默认 case 交错。
+
+三种 context 模式至少运行 `s2` 和 `s3`、clean/D2H、3 次；实际 D2H GB/s 必须报告，
+不能因为 same-process/MPS 改变背景强度而直接比较 D2D。
+
+判读如下：
+
+- 只有跨进程/跨 context 出现长尾：支持 context connection-pool 或跨 context CE
+  仲裁；
+- same-process 仍保持相同的共享-stream第二 operation 长尾：跨 context 不是必要
+  条件，应继续检查单 context 内 copy work queue/CE；
+- MPS 显著改变 connection 阈值或 channel 分布：connection pool 共享方式参与；
+- 三种模式在匹配 D2H GB/s 后一致：context 边界不是主要变量。
+
+#### 8.8.5 Stage F 验收与进入 Stage G 的门槛
+
+Stage F 完成时必须形成一张 per-case 决策表，并落入以下三类之一：
+
+1. **work-queue mapping 已确认**：connection 数改变 3-stream 的长尾，且 CUPTI
+   channel 映射随之变化；
+2. **同一 HW channel 内/下游 stall 更可能**：fast/slow 使用相同 channel，或
+   connection 数不改变长尾条件，但同 stream successor 规律仍稳定；
+3. **HW channel 不可观测**：CUPTI 字段不可用或 profiling 扰动过大，只保留
+   “同 stream successor + D2H”这一 API/queue 层事实。
+
+无论落入哪一类，只要 F1/F2/F3 已完成或明确记录不可执行原因，即可进入 Stage G；
+不得为了得到一个物理 CE 编号而无限追加 stream permutation。Stage F 的最终措辞
+最多到 work queue/HW channel，不命名未公开的 CE FIFO/credit/firmware 策略。
+
+#### 8.8.6 当前三卡执行结果（2026-08-28）
+
+当前机器实际可用的是 3 张 V100-SXM2-32GB（GPU 0/1/2），因此本轮没有把三卡结果
+冒充四卡 `assignment=0,1,0`。三卡 allpairs 每个 source 只有两条 outgoing edge，
+原 two-stream 受害配置直接简化为 `single-two-copy`：一个 source stream 连续提交两次
+P2P；`edge-independent` 使用每条 outgoing edge 一个 stream；
+`edge-source-chain` 在独立 edge stream 上增加 source-chain dependency。
+
+F1 的 126 个 case（7 个 `CUDA_DEVICE_MAX_CONNECTIONS` 设置 × 3 个 topology ×
+clean/D2H × 3 次）全部通过。`single-two-copy` 的 D2D aggregate 从
+130.080--130.215 GB/s 降至 81.929--81.971 GB/s，降幅为 37.006--37.080%；
+`edge-independent` 仅从 290.965--290.970 降至 289.605--289.629 GB/s，
+`edge-source-chain` 仅从 145.384--145.399 降至 144.865--144.939 GB/s。上述范围
+跨越 `unset,1,2,4,8,16,32`，没有出现 connection threshold。
+
+F2 的 CUPTI trace 对每个 D2D case 记录到完整的 1860 条 P2P activity；
+`single-two-copy + D2H` 为 926/1860 条 `>8 ms`，而两个独立 edge-stream topology
+均为 0 条。记录中的 `channelType=2` 是异步 memcpy channel；`channelID` 只按
+`(PID, deviceId, contextId, channelType, channelID)` 使用，不能当作公开的物理 CE
+编号。F3 显示同进程/同 primary context 会把 `single-two-copy + D2H` 进一步降到
+约 25.22 GB/s（背景约 12.56 GB/s），但 edge-independent 仍约 289.61 GB/s；
+所以 context boundary 会改变竞争程度，却不是原始现象的必要条件。
+
+本轮 Stage F 的详细 per-case 表、原始目录和 CUPTI 分析在
+[`Stage F decision`](../results/gpu-contention/work-queue-channel/stage-f-decision.md)。
+当前归类为“同一 HW channel 内/其下游 stall 更可能”：connection 数没有改变长尾
+条件，但同一 source stream 的 successor 规律稳定；该证据足以进入 8.9 的最小
+Stage G copy-path ablation，仍不能命名具体 CE FIFO、credit、HBM partition 或
+NVLink scheduler。
+
+### 8.9 Stage G：再区分 CE 与内存/NVLink 子系统
+
+#### 8.9.1 固定对照和测量原则
+
+Stage G 必须读取 Stage F 的结论后再执行。历史四卡主 victim 是 `s2` 的
+`assignment=0,1,0`；但当前正式实验机器只有三张卡，因此本轮将它直接适配为
+`single-two-copy`：每个 source 只有一个 stream，并在该 stream 上连续提交两次
+P2P copy。`edge-independent` 是免疫对照，每条 outgoing edge 使用独立 stream。
+所以本轮不把 `single-two-copy` 称为 two-stream，也不把它宣称为四卡
+`assignment=0,1,0` 的等价复现。每个替换实验同时保留：
+
+```text
+clean
+原始 D2H + 原始 cudaMemcpyPeerAsync（正对照）
+替换 background + 原始 P2P
+原始 D2H + 替换 victim
+```
+
+每个 background 必须报告每 GPU 的实际 read/write bytes、GB/s、operation cadence
+和 duty cycle。替换流量先校准到原始 D2H 的源读字节率 ±10%，再追加 saturated
+压力点；不能拿数百 GB/s 的 HBM kernel 与约十几 GB/s 的 D2H 直接比较并声称路径
+等价。正式 aggregate 使用无 profiler 运行；Nsight Compute 只用于单独验证压力
+kernel 的 HBM/L2/读写性质，不用于 `cudaMemcpyAsync` 内部归因。
+
+结果目录固定为：
+
+```text
+doc/results/gpu-contention/copy-path-ablation/
+doc/traces/gpu-contention/copy-path-ablation/
+```
+
+#### 8.9.2 G1：替换 background，保留 P2P CE victim
+
+按以下顺序实现并执行：
+
+1. **local D2D CE background**：在每张 source GPU 上用
+   `cudaMemcpyAsync(..., cudaMemcpyDeviceToDevice, backgroundStream)` 循环本地
+   device buffer 拷贝，保留 CE + 本地 HBM read/write，移除 PCIe 和 NVLink；
+2. **streaming HBM-read kernel**：工作集显著大于 6 MiB L2，只流式读取大 device
+   buffer，并把归约结果写入很小的 checksum，保留 HBM/L2/internal-fabric read，
+   移除 copy-engine DMA、PCIe 和 NVLink；
+3. **streaming HBM-write kernel**：与 read kernel 使用相同工作集和节流方法，作为
+   源读方向的负对照；
+4. **L2-resident read kernel**：工作集小于 L2，并用 Nsight Compute 验证 DRAM
+   流量显著低于 streaming read，用于区分 L2/片上路径和 HBM read。
+
+每种 background 对 `single-two-copy`/`edge-independent` 各运行 300-repeat、3 次。
+三卡受害 topology 每轮有 3 个 source-local 的第二 operation；是否复现长尾以
+aggregate、per-source 以及已有 F2 trace 的 activity 统计共同判断，而不是套用四卡
+`4 × repeats` 的计数。
+
+判读如下：
+
+- local D2D CE 在匹配压力下复现，而 HBM-read/write kernel 不复现：CE/copy
+  work-queue 子系统更可能，PCIe 和 NVLink 都不是必要条件；
+- HBM-read kernel 在匹配源读流量时复现，write 明显较弱：源 HBM/L2/internal
+  fabric read path 更可能；
+- 只有 saturated HBM-read 才复现：只能说明高带宽容量竞争，不等价于原始低速
+  D2H 机制；
+- L2-resident 在低 DRAM 流量下仍复现：L2 或 L2 后的片上路径仍可能参与；
+- 只有原始 D2H 复现：D2H CE→PCIe 特有路径或跨 context 仲裁更可能。
+
+#### 8.9.3 G2：替换 P2P victim，保留原始 D2H
+
+实现两种 SM-driven peer kernel，避免把一种访问方向的结果外推到全部 P2P：
+
+1. **peer-read kernel**：在 destination GPU 上运行 kernel，读取 source GPU 的 peer
+   pointer，并写入 destination 本地 buffer；
+2. **peer-write kernel**：在 source GPU 上运行 kernel，读取本地 buffer 并写入
+   destination GPU 的 peer pointer。
+
+两者均保留 NVLink 与源/目的 memory path，但不走 `cudaMemcpyPeerAsync` 的 CE
+command path。payload、实际 NVLink 字节量和稳态吞吐尽量匹配原 P2P；使用独立
+buffer 并校验结果，防止编译器消除访问。另增加一个 **local D2D CE victim**：在
+每张 source GPU 上建立本地 src/dst buffer，以与三卡
+`single-two-copy`/`edge-independent` 相同的 stream 拓扑发出连续的
+`cudaMemcpyAsync(DeviceToDevice)`，保留同-stream successor，移除 NVLink 和远端
+GPU。
+
+判读如下：
+
+- peer-read/peer-write kernel 在 D2H 下均无第二 operation 长尾，而 P2P CE 有：
+  CE command/work-queue 路径是必要条件；
+- peer kernel 也出现 source-local slowdown：共享点至少延伸到 source memory
+  fabric 或 NVLink injection，不能归因于 CE alone；
+- local D2D CE victim 复现相同位置和约 7.8 ms 额外时长：NVLink 和固定 peer path
+  不是必要条件，CE/local-memory 路径优先；
+- local D2D CE 不复现、peer kernel 不复现、只有 P2P CE 复现：P2P CE→NVLink
+  admission/path 是最窄的剩余范围；
+- peer-read 与 peer-write 只有一个方向复现：根据 kernel 发起端和 source-local
+  映射，进一步区分源读、目的写与 NVLink direction，但不命名具体 link scheduler。
+
+建议文件边界：
+
+```text
+src/cuda_copy/copy_path_background.cu       local D2D/HBM read/write/L2 background
+src/cuda_copy/p2p_kernel_bw.cu              peer-read/peer-write victim
+scripts/run_copy_path_ablation.sh           Stage G runner
+scripts/analyze_copy_path_ablation.py       统一 aggregate/长尾/背景压力汇总
+tests/cuda_copy/test_copy_path_cli.sh        CLI 和 2-repeat smoke test
+```
+
+#### 8.9.4 Stage G 决策表和停止条件
+
+| 主要观测 | 最窄可支持结论 | 仍不能声称 |
+| --- | --- | --- |
+| connection/channel 改变长尾；仅 CE memcpy victim 受影响 | copy work queue/CE DMA path | 具体 CE instance/FIFO/credit |
+| local D2D CE background/victim 均复现；peer kernel 不复现 | CE 与本地 memory path，NVLink 非必要 | CE 内部仲裁策略 |
+| 匹配流量的 HBM-read kernel 复现，write 弱 | source HBM/L2/fabric read path | 具体 partition/L2 slice |
+| peer kernel 也受 D2H 影响，local D2D 不受影响 | source memory path 与 NVLink injection/path | 具体 NVLink scheduler |
+| 只有原始 D2H + P2P CE 组合复现 | D2H/P2P CE 跨 PCIe/NVLink 的特有仲裁组合 | 未公开的固定 7.8 ms 机制 |
+
+完成上述最小替换矩阵后停止继续细分。如果结果只能定位到“同一 HW channel 内或
+CE/source-side path”，应将其作为最终可观测根因；精确 descriptor FIFO、credit
+refill、CE firmware time slice 需要 NVIDIA 内部计数器或驱动/firmware instrumentation，
+不属于当前公开工具能够证明的范围。
+
+#### 8.9.5 当前三卡 Stage G 结果（2026-08-28）
+
+当前机器实际只有 GPU 0/1/2。本轮的 `single-two-copy` 明确定义为每个 source
+一个 stream 上的两次连续 P2P copy；它不是两个 stream，也不是四卡
+`assignment=0,1,0` 的等价复现。正式结果和完整判读见
+[`Stage G decision`](../results/gpu-contention/copy-path-ablation/stage-g-decision.md)。
+
+G1 保留原始 P2P CE victim、替换 background。以三次均值计，原始 D2H 在
+`single-two-copy` 上将 D2D 从 `130.055` 降到 `81.991 GB/s`（`-36.96%`）；而
+实际 aggregate 约 `11.3--12.0 GB/s` 的 local D2D CE、streaming HBM read/write
+和 L2-resident read candidate 分别得到 `129.471`、`130.229`、`130.171` 和
+`130.304 GB/s`，均未重现大幅下降。`edge-independent` 在所有这些 background
+下都保持约 `289.6--291.0 GB/s`。
+
+G2/G3 保留原始 D2H、替换 victim，并按同一种 victim 的 clean→D2H 比较：
+
+| victim | `single-two-copy` clean→D2H | `edge-independent` clean→D2H |
+| --- | ---: | ---: |
+| original P2P CE | 130.055→81.991（-36.96%） | 290.968→289.617（-0.46%） |
+| local D2D CE | 1228.562→1214.518（-1.14%） | 1231.770→1226.790（-0.40%） |
+| peer-read kernel | 92.077→91.787（-0.31%） | 97.692→97.630（-0.06%） |
+| peer-write kernel | 102.799→102.380（-0.41%） | 107.363→107.362（-0.001%） |
+
+G2/G3 的 victim replacement 支持以下较强结论：普通 local D2D CE、SM-driven
+peer memory/NVLink 访问以及 source-stream successor 中的任何一个单一因素，都不足以
+解释原始约 37% 的下降；强效应目前只在原始 D2H 与原始
+`cudaMemcpyPeerAsync` P2P CE 组合、且 source stream 连续承载两次 copy 时出现。
+最窄候选范围是 D2H/P2P CE 交互下的 P2P copy command admission、source-side
+work queue，或其连接到远端 NVLink copy path 的下游路径，而不是“GPU HBM 理论
+带宽已经耗尽”。该结论仍不能命名物理 CE、L2 slice、HBM partition 或 NVLink
+scheduler。
+
+G1 的 background replacement 结论需要更严格地限定。虽然四类替代背景都匹配了约
+`4 GB/s/GPU` 的平均字节率，但实现会在每次快速 operation 同步后 sleep；代表性
+`single-two-copy` 运行中，local D2D CE、streaming HBM read、HBM write 和 L2
+candidate 的实测 active duty 分别仅约 `1.1%`、`1.6%`、`0.7%` 和 `3.4%`。原始
+D2H 则在每次 255 MiB DMA 同步完成后立即重发，接近连续占用。因此 G1 当前只证明
+“相同平均字节率的低占空比突发背景不复现”，尚不能完全排除持续 local CE、HBM/L2
+或片上 fabric 竞争。Stage H 必须先补齐时间压力匹配，再决定是否把范围进一步缩到
+D2H CE→PCIe 与 P2P CE→NVLink 的特有仲裁组合。
+
+另有两个观测边界：L2 candidate 使用 4 MiB 工作集，但尚未用 Nsight Compute 的
+DRAM/L2 counter 直接验证命中率；`peer-read single-two-copy` 的 kernel 在 destination
+GPU 发起，当前实现按 destination 而不是 source 选择 stream，所以它不是严格的
+source-stream successor 等价对照。Stage G 没有额外 CUPTI trace，慢样本计数仍引用
+Stage F/F2 的 `single-two-copy + D2H = 926/1860` activity 结果。
+
+### 8.10 Stage H：匹配时间压力并完成公开工具范围内的最终归因
+
+#### 8.10.1 目标、固定配置与执行顺序
+
+Stage H 只解决 Stage G 暴露的剩余问题：替代 background 是否因为 active duty、
+operation cadence 和单次 active duration 不匹配而得到假阴性。不得先运行大矩阵，
+也不得只按 aggregate GB/s 宣称压力等价。固定三卡口径为：
+
+```text
+devices=0,1,2
+victim size=255M
+victim topology=single-two-copy,edge-independent
+warmup=10
+repeats=300
+independent repetitions=3；临界点或复现点补到 7 次
+positive control=original D2H + original P2P CE
+negative control=clean + original P2P CE
+```
+
+严格按 H0→H1→H2→H3→H4 执行。H0/H1 未得到时间压力可比的 case 前，不得用 HBM、
+L2 或 local D2D 的阴性结果继续收窄硬件路径。
+
+#### 8.10.2 H0：统一记录 active duty、cadence 和 overlap
+
+先扩展 original D2H 与所有 replacement background 的 JSON，使每个 GPU 都报告：
+
+```text
+operations
+wallActiveSec、wallActiveDuty
+gpuActivitySec、gpuActivityDuty（trace case）
+operation duration p50/p90/p99/max
+submit-to-submit interval p50/p90/p99/max
+idle gap p50/p90/p99/max
+bytes/operation、per-GPU GB/s、aggregate GB/s
+```
+
+`wallActiveSec` 从发出 operation 前计时到对应 stream completion，包含 admission、
+排队和执行等待，不能只统计 CPU API 调用时长；`gpuActivitySec` 则从 CUPTI/NSys
+activity interval 求并集，只用于代表 trace。两者必须分列，不能把 wall wait 直接称为
+物理 CE busy time。对 original D2H 先重跑 clean/D2H 正负对照并给出上述基准；
+replacement 的“matched”至少同时满足：
+
+```text
+平均字节率相对 D2H 在 ±10% 内
+wall/gpu activity duty（按可用口径分别比较）相对 D2H 在 ±10 个百分点内
+operation duration 或 submit cadence 至少一项与 D2H 在 ±20% 内
+```
+
+如果某条替代路径因硬件本征带宽过高而无法同时满足三个条件，必须明确写成
+`bandwidth-matched`、`duty-matched` 或 `saturated`，不能统称为 matched。
+
+#### 8.10.3 H1：时间压力二维消融
+
+保留 original P2P CE victim，对 local D2D CE、streaming HBM read、HBM write 和
+L2 candidate 按以下最小层次执行：
+
+| 层次 | 生成方式 | 回答的问题 |
+| --- | --- | --- |
+| current-pulsed | 保留现有约 4 GB/s/GPU、host sleep 节流 | 复核 Stage G 低 duty 基线 |
+| duty-sweep | 每条路径取约 1%、10%、50%、接近 100% active duty | 是否存在持续占用阈值 |
+| saturated | `targetGBps=0`，完成后立即重发 | 该路径在最大持续压力下能否复现 |
+| continuous-throttled | 只对可在 operation 内节流的 kernel 使用依赖访问、有限并发或 `clock64` pacing，使其接近 4 GB/s 且接近连续 | 区分平均带宽与连续占用 |
+
+local D2D CE 不能通过 host sleep 构造“低 GB/s 且连续”的 DMA；对它至少完成
+duty-sweep 和 saturated 两层，并如实报告平均带宽变化。HBM read/write 的
+continuous-throttled kernel 必须把等待放在 kernel 内，不能在 kernel 之间 sleep。
+runner 应把平均带宽目标和 duty 目标作为两个独立参数；若本征 operation duration 使
+二者不可同时满足，校准器保留被测的一个维度，并给 case 加上
+`bandwidth-matched`/`duty-matched` 标签，禁止通过同一个 host sleep 同时宣称二者已匹配。
+
+每个 case 同时运行 `single-two-copy` 和 `edge-independent`。主要指标是 victim
+aggregate/per-source GB/s、慢 P2P 比例、背景 active duty 与背景/P2P 时间重叠率。
+判定规则：
+
+- continuous 或 saturated local D2D CE 复现 successor 长尾，而 HBM kernel 不复现：
+  持续 copy-engine/shared CE path 更可能，D2H/PCIe 不是必要条件；
+- continuous-throttled HBM read 复现而 write 明显较弱：source read-side
+  HBM/L2/internal fabric 更可能；
+- replacement 只在远高于 D2H 字节率的 saturated 点复现：只能证明容量竞争可制造
+  相似结果，不能作为原始低速 D2H 根因；
+- 在 duty/cadence 可比时所有 replacement 仍不复现，且 positive control 稳定复现：
+  才能把范围进一步缩到 D2H host/PCIe DMA 与 P2P CE remote-copy path 的特有组合。
+
+#### 8.10.4 H2：在代表点采集 CUPTI 与 Nsight Systems 时间线
+
+H1 不对全部 case 使用 profiler。只选择以下代表点各采一份完整 trace：
+
+```text
+original D2H positive control
+current-pulsed negative control
+每条 replacement 的最高 duty 点
+第一个出现明显下降的临界点（若存在）
+对应的 edge-independent control
+```
+
+CUPTI 同时记录 P2P 与 background memcpy，并通过 runtime/driver correlation ID 输出：
+
+```text
+source、destination、stream、queue position、round
+start/end/duration、previous-activity gap
+scoped channel=(PID,device,context,channelType,channelID)
+与任意 background activity 的 overlap ns 和 overlap ratio
+```
+
+三卡 `single-two-copy` 每个 trace 有 `6 × (10+300)=1860` 条 P2P；若慢样本仍绑定
+每轮三个 successor，期望数量接近 `3 × 310 = 930`。必须用 correlation/edge 标签
+确认，不能只因总数接近就写成逐 operation 已证明。Nsight Systems 用于核对 CE
+timeline、context/stream 空洞和 CPU submit cadence；正式带宽仍取无 profiler 运行。
+
+判读时区分两种 stall：
+
+- P2P activity duration 增长：stall 落在 CUPTI 可见的 memcpy execution 区间；
+- activity duration 不增长但 previous-activity gap 增长：更接近 command admission、
+  context scheduling、host submit 或 activity 可见区间之前的排队。
+
+`channelID` 只在 `(PID,device,context,channelType,channelID)` 作用域内使用；禁止跨
+进程对齐编号或将其命名为物理 Copy Engine。
+
+#### 8.10.5 H3：三卡最小触发单元与 D2H 转折点
+
+为减少三卡 allpairs aggregate 对单个 source 的掩盖，增加最小定向配置：
+
+```text
+victim: GPU0 -> GPU1、GPU0 -> GPU2，同一个 source stream 连续提交
+background: none、D2H@GPU0、D2H@GPU1、D2H@GPU2、D2H@all
+edge order: 0->1 then 0->2、0->2 then 0->1
+control: 两条 edge 使用独立 stream；独立 stream + event source-chain
+```
+
+该矩阵回答 D2H 是否必须与 P2P source 共址，以及慢的是“第二个 queue position”还是
+固定 peer/destination。若只有 `D2H@GPU0` 稳定拖慢第二条 copy，则 source-local
+admission/read path 证据增强；若 destination D2H 也按目的卡选择性拖慢，则需要保留
+destination write/path 仲裁。
+
+同时在现有 64K（无明显影响）和 4M（明显影响）之间补
+`128K,256K,512K,1M,2M` D2H size。每个 size 都必须同时报告 D2H GB/s、active duty、
+operation duration 和 cadence；在最后一个免疫点、首个下降点各采 H2 trace。该 sweep
+用于确定时间压力转折，不能把 size threshold 直接命名为 CE descriptor 或 credit
+阈值。
+
+#### 8.10.6 H4：Nsight Compute 只验证压力 kernel 性质
+
+Nsight Compute 不用于解释 `cudaMemcpyAsync` 内部实现，只单独验证 Stage G/H 的
+kernel background：
+
+- streaming HBM read/write 的实际 DRAM bytes、L2 traffic 和运行时间；
+- 4 MiB L2 candidate 的 DRAM traffic 是否显著低于 streaming read；
+- continuous-throttled kernel 是否真正保持所需的长 active duration，而非短 kernel
+  加 host idle gap。
+
+具体 metric 名称随当前 NCU/CUDA 版本查询后选择，不在脚本中假设其他架构的固定
+metric 名。NCU case 与正式性能 case 分开运行，避免 profiler serialization 改变结论。
+
+#### 8.10.7 Stage H 决策表、交付物和停止条件
+
+| 最终观测 | 公开工具范围内的最窄结论 | 后续动作 |
+| --- | --- | --- |
+| local D2D CE 在连续占用后复现 | generic continuous CE/shared copy path 参与 | 比较其 successor/channel/overlap 与 D2H |
+| 只有 continuous HBM read 复现 | source read-side memory fabric 参与 | 用 NCU 确认 read/write 与 DRAM/L2 差异 |
+| replacement 仅在远高于 D2H 的饱和带宽复现 | 存在容量竞争，但不能解释原始 D2H | 保留为独立机制，不合并归因 |
+| 所有时间可比 replacement 均不复现，只有原始 D2H+P2P CE 复现 | D2H host/PCIe DMA 与 P2P CE remote-copy admission/path 的特有组合 | 停止公开工具下继续命名内部单元 |
+| 慢时间主要位于 activity gap | command admission/context/submit 可见边界之前 | 不再用 memcpy duration 单独归因 |
+| 慢时间主要位于 activity duration，且绑定 scoped channel | HW channel 内或其下游 stall | 不把 channelID 映射为物理 CE |
+
+建议交付物：
+
+```text
+src/cuda_copy/host_copy_background.cu              补 active/cadence 统计
+src/cuda_copy/copy_path_background.cu              duty sweep 与 kernel 内节流
+scripts/run_copy_path_temporal_ablation.sh          H0/H1 runner
+scripts/run_minimal_source_diagnostic.sh            H3 runner
+scripts/analyze_copy_path_temporal_ablation.py      overlap/successor/决策汇总
+doc/results/gpu-contention/copy-path-temporal/       正式结果
+doc/traces/gpu-contention/copy-path-temporal/        CUPTI/NSys/NCU 代表 trace
+doc/results/gpu-contention/copy-path-temporal/stage-h-decision.md
+```
+
+只有在正负对照、时间压力统计、三次重复和代表 trace 都完整时才更新最终根因措辞。
+若最终仍落在“D2H/P2P CE 特有 command admission/HW channel/downstream path”，应把
+它作为公开 CUDA/CUPTI/NSys/NCU 能支持的最终边界。继续确定 descriptor FIFO、credit
+refill、物理 CE 仲裁或 firmware time slice，需要 NVIDIA 驱动/firmware instrumentation
+或内部硬件计数器，不再通过追加 stream permutation 猜测。
+
+#### 8.10.8 Stage H 已执行结果（2026-08-28，三卡）
+
+Stage H 已按 H0→H1→H2→H3→H4 执行。当前机器只有 GPU 0/1/2，三卡均为
+Tesla V100-SXM2-32GB，互联为 NVLink `NV2`。三卡适配中的
+`single-two-copy` 明确定义为“每个 source 一个 stream，在该 stream 中连续提交两条
+outgoing P2P copy”；它不是两个 stream，也不声称等价于四卡 `assignment=0,1,0`。
+
+H0 的时间统计验证了 Stage G 的匹配缺口：在 single-two-copy 中，clean victim
+约 `130.07 GB/s`，original D2H 约 `81.92 GB/s`，下降 `37.02%`；在
+edge-independent 中 original D2H 约 `289.61 GB/s`，下降约 `0.47%`。两种 topology
+下 original D2H 的 wall active duty 约 `98.2%/94.9%`，255M 单次 operation 的
+p50 大约 `70--78 ms`；current-pulsed replacement 虽然字节率约 `11.3--12.0 GB/s`，
+但 wall duty 只有约 `0.7--3.3%`，单次 operation 通常小于 `1 ms`，不能视为时间压力
+等价。
+
+H1 的 duty/saturated 矩阵显示：local D2D CE 在接近 100% duty 时使 victim
+single-two-copy / edge-independent 分别下降约 `51.5%/39.4%`，而 HBM read
+约 `-0.4%/0.01%`、HBM write 约 `2.6%/0.06%`、L2 candidate 约
+`-0.2%/0.01%`。因此持续 local CE 能制造大幅 aggregate 下降，但它的 operation duration
+约 `0.7--0.8 ms`，且会影响 independent topology；这只能说明高强度 CE/shared
+copy-engine 压力足以制造广泛容量/仲裁竞争，不能证明 local D2D 与 original D2H 的
+内部路径或慢化机制等价。
+
+H2 的 original D2H single-two-copy trace 有 `1860` 条 P2P activity、`926` 条
+`>8 ms` slow activity，P2P/background overlap ratio 约 `0.992`；同一 topology
+的 saturated local D2D CE 为 `1860/1860`，edge-independent 为 `1858/1860`。
+这两个签名不同：original D2H 只选择性拖慢约一半、几乎正好对应 successor 的 P2P，
+independent stream 免疫；saturated local D2D 则几乎把全部 stream/channel 一起拖慢，
+independent 也不免疫。因此后者是独立的广泛饱和机制，不是 original D2H queue-phase
+机制的等价复现。所有标准 victim trace 的 dropped records 为 0。H3 的 630-case
+矩阵进一步显示，
+D2H@GPU0 足以触发 source-local 下降；4M shared stream 中第二个 queue position
+的 P2P p50 duration 约 `0.334 ms`，第一个约 `0.092 ms`，反向 edge order 仍由
+第二个 position 变慢；独立 edge streams 消除了这一 position 差异，但 4M
+source-local aggregate 仍下降约 `9--12%`，所以它消除的是 successor-specific
+amplification，而不是所有资源竞争。
+
+H3 的 size sweep 存在一个必须保留的混杂：runner 把同一 `case_size` 同时传给 P2P
+victim 和 D2H background。因此 64K--4M 同时改变了 P2P payload、D2H payload、
+operation duration/cadence 和逐 operation event 的相对开销，不能用于确认独立的
+D2H size threshold，也不能把“128K 后增强”解释为 descriptor/credit 转折。
+64K/128K selected trace 各有 `620` 条 P2P、0 dropped，但小 payload 不使用 255M
+的 `>8 ms` slow 判据。
+
+H4 已执行 NCU 版本/metric query 和 bounded kernel profile，但当前用户没有访问
+GPU performance counters 的权限，返回 `ERR_NVGPUCTRPERM`，没有生成 `.ncu-rep`。
+因此本阶段不对 4 MiB candidate 的 DRAM/L2 traffic 做计数级断言；完整错误与命令见
+[`H4 availability record`](../traces/gpu-contention/copy-path-temporal/ncu/h4-ncu-availability.txt)。
+
+综合判断必须区分两个可观测机制：original D2H 在 shared source stream 中形成
+source-local、successor-selective 的 queue-phase/channel 干扰；saturated local D2D
+CE 则在极高强度下形成影响 single 和 independent 全部 P2P channel 的广泛容量/仲裁
+压力。当前不能把二者合并为一个已经确认的 generic CE 根因。对原始现象，公开工具
+支持的最窄边界仍是 **D2H-specific source-side P2P copy command admission/HW
+channel，或其连接到 remote NVLink copy path 的下游交互**。仍不能命名物理 CE、
+descriptor FIFO、credit、HBM partition、L2 slice 或 NVLink scheduler。
+Stage H 的完整决策表、时间统计、trace 和限制见
+[`Stage H decision`](../results/gpu-contention/copy-path-temporal/stage-h-decision.md)。
+
+### 8.11 Stage I：解耦 P2P payload、D2H payload、duty/cadence 和方向
+
+#### 8.11.1 固定口径和测量模式
+
+Stage I 修复 H3 的 `victimSize=backgroundSize` 混杂，并分开验证 original D2H 的
+选择性机制与 local D2D 饱和机制。所有正式 aggregate case 固定：
+
+```text
+devices=0,1,2
+P2P victim size=255M
+warmup=10
+repeats=300
+runs=3；临界点和异常点补到 7 次
+source-local victim=GPU0 -> GPU1、GPU0 -> GPU2
+topology=shared、independent、independent+source-chain
+```
+
+runner 必须提供独立的 `--victimSize` 和 `--backgroundSize`，summary CSV 分列记录。
+正式性能模式只使用 batch start/stop event，禁止给每条 P2P 插 timing event；逐
+operation duration 只在单独 diagnostic mode 或 CUPTI trace 中采集。
+
+#### 8.11.2 I1：固定 P2P=255M，只扫描 D2H payload
+
+第一轮仅在 P2P source GPU0 施加 D2H：
+
+```text
+backgroundSize=64K,128K,256K,512K,1M,2M,4M,8M,16M,255M
+backgroundSet=none,0
+edgeOrder=0->1 then 0->2、0->2 then 0->1
+topology=shared、independent、independent+source-chain
+```
+
+每个点报告 victim aggregate/per-edge GB/s，以及 D2H per-device GB/s、operation
+duration、submit interval、idle gap 和 wall duty。转折候选定义为连续两个 size 的
+三次重复均比同 topology clean 下降超过 5%；最后一个免疫点和首个下降点补到 7 次。
+只有该矩阵可以讨论独立 D2H payload/cadence 转折，旧 H3 不能用于该阈值判断。
+
+#### 8.11.3 I2：固定 D2H=255M，只扫描 duty/cadence
+
+保持每次 D2H 都为 255M，在一次 copy completion 后加入可控 idle gap，使目标 wall
+duty 为：
+
+```text
+100%,75%,50%,25%,10%,1%
+backgroundSet=0,all
+```
+
+实际 duty 必须从 JSON 重新测量。单次 D2H duration 应保持约 `70--90 ms`，只改变
+submit interval/idle gap；每个点运行三种 topology。该实验区分单次长 DMA、近连续
+占用和特定重提交流水 cadence。
+
+#### 8.11.4 I3：H2D 方向和 local D2D burst 对照
+
+按 I2 的 255M payload/duty 点执行 H2D@GPU0/all。H2D 与 D2H 的本征 operation
+duration 可以不同，但必须报告并只比较各自的 clean→treatment 与 topology
+sensitivity。保留 saturated local D2D 作为广泛容量竞争正对照；可追加由多次 local
+D2D 组成约 70 ms active burst、随后 idle 的 case，用于区分长 active window 与
+D2H/PCIe 方向本身。local D2D 逻辑字节率远高于 D2H 时不得称为 bandwidth-matched。
+
+#### 8.11.5 I4：255M 最小 source/destination 定位
+
+固定两条 255M P2P 和 255M host copy：
+
+```text
+backgroundSet=none,0,1,2,all
+edgeOrder=forward,reverse
+topology=shared,independent,independent+source-chain
+direction=d2h,h2d
+runs=3
+```
+
+重点比较 source background 是否选择性放大第二 queue position，destination
+background 是否按目标 GPU 选择 edge，以及 all background 是否把现象转为影响
+independent topology 的广泛容量竞争。none case 不因 direction 重复计入统计。
+
+#### 8.11.6 I5：只在代表点采集 CUPTI/NSys
+
+正式 aggregate 完成后，仅选择以下 case：
+
+```text
+I1 最后一个免疫点、首个下降点
+I2 duty threshold 两侧
+D2H@source shared/independent
+H2D@source shared
+D2H@destination 的最大效应点
+local D2D saturated reference
+```
+
+255M P2P 沿用历史 `>8 ms` slow threshold，同时输出 edge order、queue position、
+runtime/driver correlation ID、scoped channel、previous-activity gap 和与 source
+device 匹配的 background overlap。判读必须区分：
+
+- 约一半 P2P 慢且绑定第二 position/channel：original D2H 式选择性 queue-phase；
+- 几乎全部 P2P、包括 independent topology 一起变慢：广泛容量/仲裁压力；
+- activity duration 不变但 previous-activity gap 增长：admission/context/host-submit
+  可见区间之前等待。
+
+Nsight Systems 用于核对 CUDA memory operation、kernel、context/stream 和 CPU
+submit 时间线；正式带宽仍以无 profiler 运行结果为准。NCU 权限不是 Stage I 的
+前置条件，只限制后续 HBM/L2 transaction 级验证。
+
+#### 8.11.7 Stage I 决策表和停止条件
+
+| 观测 | 最窄结论 |
+| --- | --- |
+| 固定 255M P2P 后 D2H size 出现稳定阈值 | D2H operation duration/cadence 是触发变量；不把 size 命名为 descriptor threshold |
+| 固定 255M D2H 降低 duty 后选择性长尾消失 | 连续占用或重提交流水是必要条件 |
+| 低 duty 时每个 active window 内仍只拖慢 successor | 单次长 D2H 与 queue phase 比平均 duty 更重要 |
+| H2D 在相同 duty/topology 下不复现 | D2H source-read/host-PCIe 方向参与，不是任意 host DMA |
+| D2H@source 复现、destination 不复现 | source-side admission/read path 优先 |
+| local D2D 长 burst 只产生全通道慢化 | generic saturation 与 original D2H 选择性机制分离 |
+
+若 I1--I5 后 original D2H 仍稳定表现为 source-local、successor-selective，而 generic
+CE 对照只表现为全通道慢化，则把“D2H-specific source-side P2P command
+admission/HW-channel downstream interaction”作为公开工具的最终边界。停止通过
+stream permutation 猜测 descriptor FIFO、credit 或 firmware 策略。
+
+建议交付物：
+
+```text
+scripts/run_minimal_source_diagnostic.sh       拆分 victim/background size
+src/cuda_copy/host_copy_background.cu          增加 post-copy idle/duty 控制
+scripts/run_directional_dma_diagnostic.sh      Stage I runner
+scripts/analyze_directional_dma_diagnostic.py  阈值、position、channel 汇总
+scripts/analyze_directional_dma_trace.py       CUPTI position/channel/gap/overlap 汇总
+doc/results/gpu-contention/directional-dma/     正式结果
+doc/traces/gpu-contention/directional-dma/      代表 CUPTI/NSys trace
+doc/results/gpu-contention/directional-dma/stage-i-decision.md
+```
+
+#### 8.11.8 Stage I 已执行结果（2026-08-28，三卡）
+
+Stage I 的 I1--I4 正式矩阵和 I1 临界点补测均已完成，所有 case 通过：
+
+| 阶段 | case 数 | 关键结果 |
+| --- | ---: | --- |
+| I1 完整扫描 | 360 | 固定 P2P=255M 后，shared D2H 的 1M drop 为约 3.8%，2M 为约 7.7%，4M 为约 13.8%；independent/source-chain 最大约 0.13%/0.07% |
+| I1 7 次补测 | 84 | 1M 是最后免疫点，2M 和 4M 是连续两个每次均超过 5% 的下降点，正反 edge order 一致 |
+| I2 D2H duty | 234 | shared、D2H@GPU0 的 drop 从 100% duty 的 35.9% 下降到 25% 的 8.9%、10% 的 3.4%、1% 的约 0%；independent/source-chain 均接近噪声 |
+| I3 H2D 对照 | 234 | H2D@GPU0/all 在相同 duty/topology 下最大约 0.6%，未复现 D2H 选择性下降 |
+| I4 source/destination | 162 | 只有 D2H@GPU0 + shared 显著下降；D2H@GPU1/2 约 0%，all 的 independent 下降低于 1% |
+
+I5 代表 trace 也已采集。CUPTI 分析显示，255M D2H@GPU0 + shared 中，第一
+queue position 为 `0/300` slow，第二 position 为 `300/300` slow；交换 edge
+order 后仍是第二个提交的 edge 变慢。independent 两条 edge 均为 `0/300` slow。
+I2 的 10%/25% duty trace 中，第二 position 的 slow 数约为 `24/300` 和
+`65/300`，说明降低 duty 减少了 active window 内的 successor 慢化次数，而非
+改变固定 peer。H2D@source 和 destination-only D2H trace 未出现同等级 slow
+activity。有效 NSys 文件、CUPTI CSV 和 trace 分析见
+[`Stage I decision`](../results/gpu-contention/directional-dma/stage-i-decision.md)。
+
+因此 Stage I 后，原始现象的公开工具边界仍保持为 **D2H-specific source-side
+P2P command admission/HW-channel 或 remote NVLink copy path 的 downstream
+interaction**。这不是 generic CE 饱和的证明，也不能据此命名物理 CE、descriptor
+FIFO、credit、HBM partition、L2 slice 或 NVLink scheduler；Stage H 的 saturated
+local D2D 仅作为会影响全部 P2P channel 的广泛压力正对照。
+
+### 8.12 其余既有后续工作
+
+完成 Q1-Q4、Q2b-Q2g、Stage F/G/H 后，8.11 的 Stage I 已完成，后续再考虑：
+
+1. [已完成] background JSON 输出每个 GPU 的 bytes/GB/s；Stage F 已记录逐 GPU
+   背景压力，D1 的 D2D per-source 仍用于显示局部性；
 2. 对 D1 的 H2D 和 D2H 各做至少 5-7 次完整重复，并加入所有六个两卡组合/不同
    host CPU affinity，排除 host placement 影响；
 3. 完成 B 阶段全部 GPU 子集和 256M/512M 对照，确认 255 MiB 是否位于 host copy
    steady region；
-4. repeat protocol 固定后，再进入 E 阶段的 HBM-read/write kernel、L2-resident
-   kernel 和 local D2D CE 对照；压力 kernel 用 Nsight Compute 验证其实际流量性质。
+4. Stage G 已覆盖原计划 E 阶段的 HBM-read/write、L2-resident 和 local D2D CE
+   对照；不得原样重复同义矩阵，只补 Stage H 定义的 active duty/cadence/overlap
+   缺失压力点。
 
 ## 9. 原始结果索引
 
@@ -1118,6 +1937,24 @@ L2/HBM 或 NVLink scheduler 已被定位。Q4 只改变 measured batch 的初始
 - [Q2e 16M-intensity D2H matrix and analysis](../results/gpu-contention/queue-phase-diagnostic/stream-assignment/20260826T163221Z-334532/)
 - [Q2f 8M-intensity D2H matrix and analysis](../results/gpu-contention/queue-phase-diagnostic/stream-assignment/20260826T163827Z-338551/)
 - [Q2g 4M-intensity D2H matrix and analysis](../results/gpu-contention/queue-phase-diagnostic/stream-assignment/20260826T164908Z-344216/)
+- [Stage F three-GPU F1 matrix and analysis](../results/gpu-contention/work-queue-channel/20260828T020759Z-27876/)
+- [Stage F CUPTI F2 traces and per-trace analysis](../results/gpu-contention/work-queue-channel/20260828T022749Z-41848/)
+- [Stage F F3 context-boundary matrix and traces](../results/gpu-contention/work-queue-channel/context-boundary/20260828T024415Z-51080/)
+- [Stage F decision table](../results/gpu-contention/work-queue-channel/stage-f-decision.md)
+- [Stage G background-path ablation](../results/gpu-contention/copy-path-ablation/20260828T030804Z-64627/)
+- [Stage G victim-path ablation](../results/gpu-contention/copy-path-ablation/20260828T031104Z-67177/)
+- [Stage G clean victim controls](../results/gpu-contention/copy-path-ablation/20260828T031356Z-69634/)
+- [Stage G decision table](../results/gpu-contention/copy-path-ablation/stage-g-decision.md)
+- [Stage H current-pulsed temporal controls](../results/gpu-contention/copy-path-temporal/20260828T-current-pulsed-3gpu-rerun/)
+- [Stage H duty/saturated matrix](../results/gpu-contention/copy-path-temporal/20260828T-duty-sweep-saturated-3gpu/)
+- [Stage H CUPTI/NSys selected traces](../traces/gpu-contention/copy-path-temporal/20260828T-h2-selected-3gpu/)
+- [Stage H minimal source diagnostic](../results/gpu-contention/minimal-source-diagnostic/20260828T-h3-3gpu/)
+- [Stage H minimal source selected traces](../traces/gpu-contention/minimal-source-diagnostic/20260828T-h3-selected-3gpu/)
+- [Stage H decision table](../results/gpu-contention/copy-path-temporal/stage-h-decision.md)
+- [Stage H NCU availability record](../traces/gpu-contention/copy-path-temporal/ncu/h4-ncu-availability.txt)
+- [Stage I decision table](../results/gpu-contention/directional-dma/stage-i-decision.md)
+- [Stage I directional DMA matrices](../results/gpu-contention/directional-dma/)
+- [Stage I representative CUPTI/NSys traces](../traces/gpu-contention/directional-dma/stage-i5-20260828-3gpu/)
 - [Q3 edge-permutation matrix and analysis](../results/gpu-contention/queue-phase-diagnostic/q3-edge-permutation/20260826T110853Z-249443/)
 - [Q3 edge-permutation traces](../traces/gpu-contention/queue-phase-diagnostic/q3-edge-permutation/20260826T111616Z/)
 - [Q4 source-offset matrix and analysis](../results/gpu-contention/queue-phase-diagnostic/q4-source-offset/20260826T113225Z-267432/)

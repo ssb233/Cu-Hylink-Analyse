@@ -45,6 +45,119 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
   void* netDeviceHandle;
   uint64_t accSize;
 
+#ifdef NCCL_EXPERIMENT_PRIMITIVE_TRACE
+  static_assert(NCCL_PRIMITIVE_TRACE_RECORDS_PER_CHANNEL > 0,
+                "Primitive trace channel must contain at least one record");
+  enum {
+    NCCL_PRIMITIVE_TRACE_WAIT_RECV = 1,
+    NCCL_PRIMITIVE_TRACE_WAIT_SEND = 2,
+    NCCL_PRIMITIVE_TRACE_FENCE = 3,
+    NCCL_PRIMITIVE_TRACE_STORE = 4,
+    NCCL_PRIMITIVE_TRACE_POST = 5,
+    NCCL_PRIMITIVE_TRACE_COPY = 6
+  };
+
+  __device__ __forceinline__ int primitiveTraceRole(uint16_t primitive) {
+    const bool post = primitive == NCCL_PRIMITIVE_TRACE_FENCE || primitive == NCCL_PRIMITIVE_TRACE_STORE ||
+                      primitive == NCCL_PRIMITIVE_TRACE_POST;
+    if (post) {
+      if (flags & RolePostRecv) return 2;
+      if (flags & RolePostSend) return 3;
+    } else {
+      if (flags & RoleWaitRecv) return 0;
+      if (flags & RoleWaitSend) return 1;
+    }
+    if (flags & RoleWaitRecv) return 0;
+    if (flags & RoleWaitSend) return 1;
+    if (flags & RolePostRecv) return 2;
+    if (flags & RolePostSend) return 3;
+    return -1;
+  }
+
+  __device__ __forceinline__ bool primitiveTraceShouldSample(uint64_t* ordinal) {
+    struct ncclDevPrimitiveTrace* trace = ncclShmem.comm.primitiveTrace;
+    if (trace == nullptr || trace->enabled == 0 || trace->samplePeriod == 0) return false;
+    uint64_t work = ncclShmem.workCounter;
+    if (work % trace->samplePeriod != 0) return false;
+    *ordinal = work / trace->samplePeriod;
+    return true;
+  }
+
+  enum {
+    NCCL_PRIMITIVE_TRACE_DROP_BAD_KEY = 1u << 0,
+    NCCL_PRIMITIVE_TRACE_DROP_BAD_EVENT = 1u << 1,
+    NCCL_PRIMITIVE_TRACE_DROP_COLLISION = 1u << 2
+  };
+
+  __device__ __forceinline__ void primitiveTraceDrop(struct ncclDevPrimitiveTraceChannel* channel,
+                                                     uint32_t reason) {
+    channel->overflow = 1;
+    atomicOr(&channel->reserved[0], reason);
+    atomicAdd(&channel->droppedRecords, 1);
+  }
+
+  __device__ __forceinline__ void primitiveTraceRecord(uint64_t ordinal, uint16_t primitive, uint16_t phase,
+    uint64_t stepValue, uint64_t startNs, uint64_t durationNs,
+                                                       uint64_t bytes, uint32_t spins) {
+    struct ncclDevPrimitiveTrace* trace = ncclShmem.comm.primitiveTrace;
+    if (trace == nullptr) return;
+    int traceRole = primitiveTraceRole(primitive);
+    if (ncclShmem.channelId < 0 ||
+        ncclShmem.channelId >= MAXCHANNELS) {
+      return;
+    }
+
+    struct ncclDevPrimitiveTraceChannel* channel = &trace->channels[ncclShmem.channelId];
+    if (traceRole < 0 || traceRole >= NCCL_PRIMITIVE_TRACE_ROLES || group < 0 ||
+        group >= NCCL_PRIMITIVE_TRACE_GROUPS || ordinal >= NCCL_PRIMITIVE_TRACE_MAX_SAMPLED_WORKS) {
+      primitiveTraceDrop(channel, NCCL_PRIMITIVE_TRACE_DROP_BAD_KEY);
+      return;
+    }
+
+    const uint64_t cursorIndex =
+      (ordinal * NCCL_PRIMITIVE_TRACE_GROUPS + group) * NCCL_PRIMITIVE_TRACE_ROLES + traceRole;
+    const uint32_t eventIndexValue = atomicAdd(&channel->eventCursors[cursorIndex], 1);
+    if (eventIndexValue >= NCCL_PRIMITIVE_TRACE_EVENTS_PER_ROLE) {
+      primitiveTraceDrop(channel, NCCL_PRIMITIVE_TRACE_DROP_BAD_EVENT);
+      return;
+    }
+    const uint16_t eventIndex = (uint16_t)eventIndexValue;
+
+    const int slot = (int)(ordinal * NCCL_PRIMITIVE_TRACE_SLOTS_PER_WORK +
+                           ((group * NCCL_PRIMITIVE_TRACE_ROLES + traceRole) *
+                            NCCL_PRIMITIVE_TRACE_EVENTS_PER_ROLE) + eventIndex);
+    struct ncclDevPrimitiveTraceRecord* record = &channel->records[slot];
+    uint64_t sequence = ncclShmem.workCounter;
+
+    // A valid slot is never reused.  This catches an event-index collision instead of
+    // silently overwriting a sample, which is especially important for per-event p99s.
+    if (record->valid != 0) {
+      const uint64_t stepUnits = StepPerSlice == 0 ? stepValue : stepValue / StepPerSlice;
+      atomicExch(&channel->reserved[1], (uint32_t)eventIndex | ((uint32_t)(stepUnits & 0xffff) << 16));
+      primitiveTraceDrop(channel, NCCL_PRIMITIVE_TRACE_DROP_COLLISION);
+      return;
+    }
+    record->sequence = sequence;
+    record->step = stepValue;
+    record->startNs = startNs;
+    record->durationNs = durationNs;
+    record->sliceBytes = bytes;
+    record->rank = (uint16_t)ncclShmem.comm.rank;
+    record->channel = (uint16_t)ncclShmem.channelId;
+    record->group = (uint16_t)group;
+    record->role = (uint16_t)traceRole;
+    record->primitive = primitive;
+    record->phase = phase;
+    record->funcId = (uint16_t)ncclShmem.funcId;
+    record->eventIndex = eventIndex;
+    record->spinLoadCount = spins;
+    record->eventCount = 1;
+    // The record is exported only after the owning CUDA stream has synchronized.
+    // No host-visible publication or system-scope fence is needed in the kernel.
+    record->valid = 1;
+  }
+#endif
+
   // Don't use barrier 0 as it's used by the final sync
   __device__ void barrier() {
     if (nthreads == WARP_SIZE) __syncwarp();
@@ -104,6 +217,16 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
     // Yes, for some template arguments this code will be unreachable.  That's fine.
     // coverity[dead_error_line]
     if ((flags & (Recv * RoleWaitRecv)) || (flags & (Send * RoleWaitSend))) {
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_WAIT
+      bool traceWait = false;
+      uint64_t traceOrdinal = 0;
+      uint64_t traceStart = 0;
+      if (index == 0) {
+        traceWait = primitiveTraceShouldSample(&traceOrdinal);
+        if (traceWait) traceStart = globaltimer();
+      }
+#endif
       int spins = 0;
       while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
         connStepCache = loadStepValue(connStepPtr);
@@ -113,6 +236,15 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
         //          int(connStepCache + (isSendNotRecv ? NCCL_STEPS : 0)), int(step+StepPerSlice));
         // }
       }
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_WAIT
+      if (index == 0 && traceWait) {
+        primitiveTraceRecord(traceOrdinal,
+                             isSendNotRecv ? NCCL_PRIMITIVE_TRACE_WAIT_SEND : NCCL_PRIMITIVE_TRACE_WAIT_RECV,
+                             isSendNotRecv ? NCCL_PRIMITIVE_TRACE_WAIT_SEND : NCCL_PRIMITIVE_TRACE_WAIT_RECV, step,
+                             traceStart, globaltimer() - traceStart, (uint64_t)nelts * sizeof(T), (uint32_t)spins);
+      }
+#endif
     }
 
     if (flags & (Recv * RoleWaitRecv | Send * RoleWaitSend)) {
@@ -166,10 +298,78 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
   inline __device__ void postPeer(bool dataStored) {
     if (flags & (Recv * RolePostRecv | Send * RolePostSend)) {
       step += StepPerSlice;
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_POST
+      bool tracePost = false;
+      uint64_t traceOrdinal = 0;
+      uint64_t traceStart = 0;
+      if (index == 0) {
+        tracePost = primitiveTraceShouldSample(&traceOrdinal);
+        if (tracePost) traceStart = globaltimer();
+      }
       if (Send && (flags & RolePostSend) && (dataStored || (flags & ConnFifoEnabled))) {
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
         fence_acq_rel_sys();
+#else
+        fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
       }
       st_relaxed_sys_global(connStepPtr, step);
+      if (index == 0 && tracePost) {
+        primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_POST, NCCL_PRIMITIVE_TRACE_POST, step, traceStart,
+                             globaltimer() - traceStart, (uint64_t)stepSize * StepPerSlice * sizeof(T), 0);
+      }
+#elif defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_FENCE
+      bool traceFence = false;
+      uint64_t traceOrdinal = 0;
+      uint64_t traceStart = 0;
+      const bool fenceNeeded = Send && (flags & RolePostSend) && (dataStored || (flags & ConnFifoEnabled));
+      if (index == 0 && fenceNeeded) {
+        traceFence = primitiveTraceShouldSample(&traceOrdinal);
+        if (traceFence) traceStart = globaltimer();
+      }
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
+      if (fenceNeeded) fence_acq_rel_sys();
+#else
+      if (fenceNeeded) fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
+      if (index == 0 && traceFence) {
+        primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_FENCE, NCCL_PRIMITIVE_TRACE_FENCE, step, traceStart,
+                             globaltimer() - traceStart, (uint64_t)stepSize * StepPerSlice * sizeof(T), 0);
+      }
+      st_relaxed_sys_global(connStepPtr, step);
+#elif defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_STORE
+      bool traceStore = false;
+      uint64_t traceOrdinal = 0;
+      uint64_t traceStart = 0;
+      if (index == 0) {
+        traceStore = primitiveTraceShouldSample(&traceOrdinal);
+      }
+      if (Send && (flags & RolePostSend) && (dataStored || (flags & ConnFifoEnabled))) {
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
+        fence_acq_rel_sys();
+#else
+        fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
+      }
+      if (index == 0 && traceStore) traceStart = globaltimer();
+      st_relaxed_sys_global(connStepPtr, step);
+      if (index == 0 && traceStore) {
+        primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_STORE, NCCL_PRIMITIVE_TRACE_STORE, step, traceStart,
+                             globaltimer() - traceStart, (uint64_t)stepSize * StepPerSlice * sizeof(T), 0);
+      }
+#else
+      if (Send && (flags & RolePostSend) && (dataStored || (flags & ConnFifoEnabled))) {
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
+        fence_acq_rel_sys();
+#else
+        fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
+      }
+      st_relaxed_sys_global(connStepPtr, step);
+#endif
     }
   }
 
@@ -185,7 +385,6 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
     sliceSize = max(divUp(nelem, 16 * SlicePerChunk) * 16, sliceSize / 32);
     int slice = 0;
     int offset = 0;
-
     if (tid < nworkers && offset < nelem && !isNetOffload) {
       // Worker-only loop for non-empty slices. Non-workers and empty slices are
       // processed in the loop following this if block. The benefit of splitting
@@ -237,6 +436,16 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
           subBarrier();
         }
 
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_COPY
+        bool traceCopy = false;
+        uint64_t traceOrdinal = 0;
+        uint64_t traceStart = 0;
+        if (tid == 0) {
+          traceCopy = primitiveTraceShouldSample(&traceOrdinal);
+          if (traceCopy) traceStart = globaltimer();
+        }
+#endif
         if (DirectRecv &&
             ncclShmem.groups[group].srcs[0] == ncclShmem.groups[group].dsts[0]
             /* NVLS can have srcs[0] == dsts[0], but we cannot enter this "if branch",
@@ -274,6 +483,13 @@ class Primitives<T, RedOp, Fan, Direct, ProtoSimple<SlicePerChunk, StepPerSlice,
           // skip data flush.
           workSize = 0;
         }
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_COPY
+        if (tid == 0 && traceCopy) {
+          primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_COPY, NCCL_PRIMITIVE_TRACE_COPY, step, traceStart,
+                               globaltimer() - traceStart, (uint64_t)workSize * sizeof(T), 0);
+        }
+#endif
         barrier(); // This barrier has a counterpart in following loop
         postPeer<Recv, Send>(0 < workSize);
         offset += sliceSize;
@@ -328,11 +544,31 @@ public:
         int nsend, nrecv;
         if (flags & (Recv * RoleWaitRecv | Send * RoleWaitSend)) {
           const bool isSendNotRecv = (Send && Recv) ? (flags & RoleWaitSend) : Send;
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_WAIT
+          bool traceWait = false;
+          uint64_t traceOrdinal = 0;
+          uint64_t traceStart = 0;
+          if (index == 0) {
+            traceWait = primitiveTraceShouldSample(&traceOrdinal);
+            if (traceWait) traceStart = globaltimer();
+          }
+#endif
           int spins = 0;
           while (connStepCache + (isSendNotRecv ? NCCL_STEPS : 0) < step + StepPerSlice) {
             connStepCache = loadStepValue(connStepPtr);
             if (checkAbort(flags, Aborted, spins)) break;
           }
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_WAIT
+          if (index == 0 && traceWait) {
+            primitiveTraceRecord(traceOrdinal,
+                                 isSendNotRecv ? NCCL_PRIMITIVE_TRACE_WAIT_SEND : NCCL_PRIMITIVE_TRACE_WAIT_RECV,
+                                 isSendNotRecv ? NCCL_PRIMITIVE_TRACE_WAIT_SEND : NCCL_PRIMITIVE_TRACE_WAIT_RECV, step,
+                                 traceStart, globaltimer() - traceStart, (uint64_t)stepSize * StepPerSlice * sizeof(T),
+                                 (uint32_t)spins);
+          }
+#endif
           void** ptrs = isSendNotRecv ? ncclShmem.groups[group].dsts : ncclShmem.groups[group].srcs;
           if ((flags & ConnFifoEnabled) && connFifo[step % NCCL_STEPS].mode == NCCL_MODE_OFFSET) {
             ssize_t offset = loadSsize(&connFifo[step % NCCL_STEPS].offset);
@@ -391,10 +627,77 @@ public:
         step += StepPerSlice;
       }
       if (flags & (Recv * RolePostRecv | Send * RolePostSend)) {
+#if defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_POST
+        bool tracePost = false;
+        uint64_t traceOrdinal = 0;
+        uint64_t traceStart = 0;
+        if (index == 0) {
+          tracePost = primitiveTraceShouldSample(&traceOrdinal);
+          if (tracePost) traceStart = globaltimer();
+        }
         if (Send && (!Recv || (flags & RolePostSend)) && (dstSize != 0 || (flags & ConnFifoEnabled))) {
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
           fence_acq_rel_sys();
+#else
+          fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
         }
         st_relaxed_sys_global(connStepPtr, step);
+        if (index == 0 && tracePost) {
+          primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_POST, NCCL_PRIMITIVE_TRACE_POST, step, traceStart,
+                               globaltimer() - traceStart, (uint64_t)dstSize * sizeof(T), 0);
+        }
+#elif defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_FENCE
+        bool traceFence = false;
+        uint64_t traceOrdinal = 0;
+        uint64_t traceStart = 0;
+        const bool fenceNeeded = Send && (!Recv || (flags & RolePostSend)) &&
+                                 (dstSize != 0 || (flags & ConnFifoEnabled));
+        if (index == 0 && fenceNeeded) {
+          traceFence = primitiveTraceShouldSample(&traceOrdinal);
+          if (traceFence) traceStart = globaltimer();
+        }
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
+        if (fenceNeeded) fence_acq_rel_sys();
+#else
+        if (fenceNeeded) fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
+        if (index == 0 && traceFence) {
+          primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_FENCE, NCCL_PRIMITIVE_TRACE_FENCE, step, traceStart,
+                               globaltimer() - traceStart, (uint64_t)dstSize * sizeof(T), 0);
+        }
+        st_relaxed_sys_global(connStepPtr, step);
+#elif defined(NCCL_EXPERIMENT_PRIMITIVE_TRACE) && \
+    NCCL_EXPERIMENT_PRIMITIVE_TRACE_KIND == NCCL_PRIMITIVE_TRACE_KIND_STORE
+        bool traceStore = false;
+        uint64_t traceOrdinal = 0;
+        uint64_t traceStart = 0;
+        if (index == 0) traceStore = primitiveTraceShouldSample(&traceOrdinal);
+        if (Send && (!Recv || (flags & RolePostSend)) && (dstSize != 0 || (flags & ConnFifoEnabled))) {
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
+          fence_acq_rel_sys();
+#else
+          fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
+        }
+        if (index == 0 && traceStore) traceStart = globaltimer();
+        st_relaxed_sys_global(connStepPtr, step);
+        if (index == 0 && traceStore) {
+          primitiveTraceRecord(traceOrdinal, NCCL_PRIMITIVE_TRACE_STORE, NCCL_PRIMITIVE_TRACE_STORE, step, traceStart,
+                               globaltimer() - traceStart, (uint64_t)dstSize * sizeof(T), 0);
+        }
+#else
+        if (Send && (!Recv || (flags & RolePostSend)) && (dstSize != 0 || (flags & ConnFifoEnabled))) {
+#if NCCL_EXPERIMENT_FENCE_SCOPE_SYS
+          fence_acq_rel_sys();
+#else
+          fence_acq_rel_gpu(); // EXPERIMENT: Ring+Simple post-send fence
+#endif
+        }
+        st_relaxed_sys_global(connStepPtr, step);
+#endif
       }
     }
   }
